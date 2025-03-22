@@ -1,0 +1,93 @@
+# Python/Django General
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.db
+*.sqlite3
+*.log
+*.pid
+*.seed
+*.pot
+*.mo
+*.egg-info/
+dist/
+build/
+*.egg
+*.whl
+
+# Django Specific
+# Virtual Environment
+venv/
+env/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Static and Media Files
+staticfiles/
+media/
+collected_static/
+
+# Django Local Settings and Secrets
+local_settings.py
+.env
+*.env.*
+secrets.json
+*.key
+*.pem
+
+# Django Debug and Cache
+*.bak
+*.cache
+*.prof
+debug.log
+
+# Testing and Coverage
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+pytest_cache/
+.tox/
+
+# Node/React General
+node_modules/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# React Build Output
+frontend/build/
+frontend/dist/
+frontend/static/js/*.js.map
+frontend/static/css/*.css.map
+
+# React Dependency Management
+frontend/package-lock.json  # If using npm (optional, include if using yarn)
+frontend/yarn.lock          # If using yarn (optional, include if using npm)
+frontend/.pnp*
+frontend/.yarn/
+frontend/.yarnrc
+
+# Editor and OS Files
+.DS_Store
+*.swp
+*~
+*.swo
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Miscellaneous
+*.tmp
+*.bak
+*.swp
+*.swn
+*.swo
+*.orig
+Thumbs.db

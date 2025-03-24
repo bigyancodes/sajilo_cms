@@ -1,7 +1,8 @@
 # accounts/urls.py
 from django.urls import path
-from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
+from rest_framework_simplejwt.views import TokenVerifyView
 from . import views
+from .token_views import CookieTokenRefreshView, TokenVerifyView
 
 app_name = "accounts"
 
@@ -17,7 +18,7 @@ urlpatterns = [
     path("profile/", views.UserProfileView.as_view(), name="profile"),
     
     # JWT Token Management
-    path("token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
+    path("token/refresh/", CookieTokenRefreshView.as_view(), name="token_refresh"),
     path("token/verify/", TokenVerifyView.as_view(), name="token_verify"),
     
     # Admin Routes

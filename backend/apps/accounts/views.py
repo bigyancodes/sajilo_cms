@@ -2,7 +2,7 @@
 import logging
 import requests
 from django.contrib.auth import get_user_model
-from rest_framework import generics, status
+from rest_framework import generics, status, serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -31,8 +31,48 @@ class UserListView(generics.ListAPIView):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def get_csrf_token(request):
-    response = Response({"message": "CSRF token set."})
-    response.set_cookie("csrftoken", get_token(request), samesite="Lax", secure=settings.CSRF_COOKIE_SECURE)
+    """
+    Get a CSRF token for cross-site requests.
+    This endpoint should be called before making POST/PUT/DELETE requests.
+    """
+    token = get_token(request)
+    response = Response({"message": "CSRF token set.", "csrf": token})
+    response.set_cookie(
+        "csrftoken", 
+        token, 
+        max_age=settings.CSRF_COOKIE_AGE,
+        domain=settings.CSRF_COOKIE_DOMAIN,
+        path=settings.CSRF_COOKIE_PATH,
+        secure=settings.CSRF_COOKIE_SECURE,
+        httponly=False,  # Must be False to be accessible by JavaScript
+        samesite=settings.CSRF_COOKIE_SAMESITE,
+    )
+    logger.info("CSRF token provided to client")
+    return response
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def get_csrf_token(request):
+    """
+    Get a CSRF token for cross-site requests.
+    This endpoint should be called before making POST/PUT/DELETE requests.
+    """
+    token = get_token(request)
+    response = Response({"message": "CSRF token set.", "csrf": token})
+    
+    # Set the CSRF cookie explicitly
+    response.set_cookie(
+        "csrftoken", 
+        token, 
+        max_age=settings.CSRF_COOKIE_AGE,
+        domain=settings.CSRF_COOKIE_DOMAIN,
+        path=settings.CSRF_COOKIE_PATH,
+        secure=settings.CSRF_COOKIE_SECURE, 
+        httponly=False,  # Must be False to be accessible by JavaScript
+        samesite=settings.CSRF_COOKIE_SAMESITE or 'Lax',
+    )
+    
+    logger.info("CSRF token provided to client")
     return response
 
 @api_view(["POST"])
@@ -60,18 +100,41 @@ def google_login(request):
         )
         if not created and user.role != UserRoles.PATIENT:
             return Response({"error": "Only patients can use Google login."}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Generate tokens
         refresh = RefreshToken.for_user(user)
+        access_token = refresh.access_token
+        
+        # Prepare response data
         response_data = {
             "message": "Login successful",
             "role": user.role,
             "email": user.email,
             "first_name": user.first_name or "",
             "last_name": user.last_name or "",
-            "profile_photo_url": user.profile_photo.url if user.profile_photo else None
+            "profile_photo_url": user.profile_photo.url if user.profile_photo else None,
+            "id": user.id,
         }
+        
+        # Create response and set cookies
         response = Response(response_data, status=status.HTTP_200_OK)
-        set_auth_cookies(response, refresh.access_token, refresh)
-        response.set_cookie("csrftoken", get_token(request), samesite="Lax", secure=settings.CSRF_COOKIE_SECURE)
+        
+        # Set auth cookies with our improved function
+        set_auth_cookies(response, access_token, refresh)
+        
+        # Set CSRF token
+        response.set_cookie(
+            "csrftoken", 
+            get_token(request),
+            max_age=settings.CSRF_COOKIE_AGE,
+            domain=settings.CSRF_COOKIE_DOMAIN,
+            path=settings.CSRF_COOKIE_PATH,
+            secure=settings.CSRF_COOKIE_SECURE,
+            httponly=False,  # Must be False to be accessible by JavaScript
+            samesite=settings.CSRF_COOKIE_SAMESITE or 'Lax',
+        )
+        
+        logger.info(f"Google login successful for: {email}")
         return response
     except requests.exceptions.RequestException as e:
         logger.error(f"Google API request failed: {str(e)}")
@@ -96,7 +159,12 @@ class CustomLoginView(APIView):
                 {"error": "Your staff account is pending verification.", "status": "unverified"},
                 status=status.HTTP_403_FORBIDDEN
             )
+        
+        # Generate tokens
         refresh = RefreshToken.for_user(user)
+        access_token = refresh.access_token
+        
+        # Prepare response data
         response_data = {
             "message": "Login successful",
             "role": user.role,
@@ -104,10 +172,28 @@ class CustomLoginView(APIView):
             "first_name": user.first_name or "",
             "last_name": user.last_name or "",
             "profile_photo_url": user.profile_photo.url if user.profile_photo else None,
+            "id": user.id,
         }
+        
+        # Create response and set cookies
         response = Response(response_data, status=status.HTTP_200_OK)
-        set_auth_cookies(response, refresh.access_token, refresh)
-        response.set_cookie("csrftoken", get_token(request), samesite="Lax", secure=settings.CSRF_COOKIE_SECURE)
+        
+        # Set auth cookies with our improved function
+        set_auth_cookies(response, access_token, refresh)
+        
+        # Set CSRF token
+        response.set_cookie(
+            "csrftoken", 
+            get_token(request),
+            max_age=settings.CSRF_COOKIE_AGE,
+            domain=settings.CSRF_COOKIE_DOMAIN,
+            path=settings.CSRF_COOKIE_PATH,
+            secure=settings.CSRF_COOKIE_SECURE,
+            httponly=False,  # Must be False to be accessible by JavaScript
+            samesite=settings.CSRF_COOKIE_SAMESITE or 'Lax',
+        )
+        
+        logger.info(f"Login successful for: {email}")
         return response
 
 @api_view(["POST"])
@@ -122,9 +208,9 @@ def custom_logout_view(request):
             except Exception as e:
                 logger.error(f"Token blacklist failed: {str(e)}")
         response = Response({"message": "Logged out successfully."}, status=status.HTTP_205_RESET_CONTENT)
-        response.delete_cookie("refresh_token")
-        response.delete_cookie("access_token")
-        response.delete_cookie("csrftoken")
+        response.delete_cookie("refresh_token", path='/')
+        response.delete_cookie("access_token", path='/')
+        response.delete_cookie("csrftoken", path='/')
         return response
     except Exception as e:
         logger.error(f"Logout error: {str(e)}")

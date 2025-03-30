@@ -19,6 +19,7 @@ import PatientDashboard from "./pages/dashboards/PatientDashboard";
 
 // === FEATURE PAGES ===
 import DoctorList from "./components/DoctorList";
+import AppointmentBooking from "./components/appointments/AppointmentBooking";
 
 // === PROTECTED ROUTE COMPONENT === 
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -49,10 +50,10 @@ function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/unauthorized" element={<UnauthorizedPage />} />
           <Route path="/doctors" element={<DoctorList />} />
-
+          
           {/* Protected Routes */}
           <Route
-            path="/admin"
+            path="/admin/*"
             element={
               <ProtectedRoute roles={["ADMIN"]}>
                 <AdminDashboard />
@@ -60,7 +61,7 @@ function App() {
             }
           />
           <Route
-            path="/doctor"
+            path="/doctor/*"
             element={
               <ProtectedRoute roles={["DOCTOR"]}>
                 <DoctorDashboard />
@@ -68,7 +69,7 @@ function App() {
             }
           />
           <Route
-            path="/receptionist"
+            path="/receptionist/*"
             element={
               <ProtectedRoute roles={["RECEPTIONIST"]}>
                 <ReceptionistDashboard />
@@ -76,7 +77,7 @@ function App() {
             }
           />
           <Route
-            path="/pharmacist"
+            path="/pharmacist/*"
             element={
               <ProtectedRoute roles={["PHARMACIST"]}>
                 <PharmacistDashboard />
@@ -84,14 +85,24 @@ function App() {
             }
           />
           <Route
-            path="/patient"
+            path="/patient/*"
             element={
               <ProtectedRoute roles={["PATIENT"]}>
                 <PatientDashboard />
               </ProtectedRoute>
             }
           />
-
+          
+          {/* Appointment-specific routes */}
+          <Route
+            path="/book-appointment/:doctorId?"
+            element={
+              <ProtectedRoute roles={["PATIENT", "RECEPTIONIST", "ADMIN"]}>
+                <AppointmentBooking />
+              </ProtectedRoute>
+            }
+          />
+          
           {/* 404 Fallback */}
           <Route path="*" element={<h2 className="text-center p-10 text-2xl">Page Not Found</h2>} />
         </Routes>

@@ -1,4 +1,4 @@
-// src/components/UserList.jsx - Fixed useEffect dependency warning
+// src/components/UserList.jsx
 import React, { useEffect, useState, useCallback } from "react";
 import axiosInstance from "../api/axiosInstance";
 import UserEditModal from "./UserEditModal";
@@ -28,8 +28,7 @@ const UserList = ({ onVerify, refresh }) => {
       user.email.toLowerCase().includes(lowerSearch) ||
       (user.first_name &&
         user.first_name.toLowerCase().includes(lowerSearch)) ||
-      (user.last_name &&
-        user.last_name.toLowerCase().includes(lowerSearch));
+      (user.last_name && user.last_name.toLowerCase().includes(lowerSearch));
 
     return matchesRole && matchesSearch;
   });
@@ -38,8 +37,10 @@ const UserList = ({ onVerify, refresh }) => {
   const normalizeUserData = (rawUser) => {
     return {
       ...rawUser,
-      license_number: rawUser.license_number || "",
-      specialty: rawUser.specialty || "",
+      license_number: rawUser.doctor_profile
+        ? rawUser.doctor_profile.license_number
+        : "",
+      specialty: rawUser.doctor_profile ? rawUser.doctor_profile.specialty : "",
     };
   };
 
@@ -66,8 +67,12 @@ const UserList = ({ onVerify, refresh }) => {
   const handleEdit = (user) => {
     setSelectedUser({
       ...user,
-      license_number: user.license_number || "",
-      specialty: user.specialty || "",
+      license_number: user.doctor_profile
+        ? user.doctor_profile.license_number
+        : user.license_number || "",
+      specialty: user.doctor_profile
+        ? user.doctor_profile.specialty
+        : user.specialty || "",
     });
     setShowEditModal(true);
   };
@@ -115,8 +120,10 @@ const UserList = ({ onVerify, refresh }) => {
       };
 
       if (updatedData.role === "DOCTOR") {
-        payload.license_number = updatedData.license_number;
-        payload.specialty = updatedData.specialty;
+        payload.doctor_profile = {
+          license_number: updatedData.license_number,
+          specialty: updatedData.specialty,
+        };
       }
 
       const response = await axiosInstance.put(
@@ -125,9 +132,15 @@ const UserList = ({ onVerify, refresh }) => {
       );
 
       const updatedUser = normalizeUserData(response.data);
-      setUsers((prevUsers) =>
-        prevUsers.map((u) => (u.id === updatedUser.id ? updatedUser : u))
-      );
+      // Option 1: Ensure state updates trigger re-render by creating a new array and object
+      setUsers((prevUsers) => {
+        const newUsers = [...prevUsers];
+        const index = newUsers.findIndex((u) => u.id === updatedUser.id);
+        if (index !== -1) {
+          newUsers[index] = { ...updatedUser };
+        }
+        return newUsers;
+      });
 
       setShowEditModal(false);
     } catch (err) {

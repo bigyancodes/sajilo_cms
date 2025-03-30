@@ -319,3 +319,17 @@ class DoctorDetailView(generics.RetrieveAPIView):
     lookup_field = 'pk'
     def get_queryset(self):
         return User.objects.filter(role=UserRoles.DOCTOR)
+
+class CurrentDoctorView(APIView):
+    permission_classes = [IsAuthenticated, IsVerified]  # Ensure the user is authenticated and verified
+    serializer_class = PublicDoctorSerializer
+
+    def get(self, request):
+        user = request.user
+        if user.role != UserRoles.DOCTOR:
+            return Response(
+                {"error": "This endpoint is only for doctors."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        serializer = self.serializer_class(user, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)

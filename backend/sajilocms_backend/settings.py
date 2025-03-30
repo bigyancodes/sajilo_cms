@@ -46,9 +46,11 @@ INSTALLED_APPS = [
     'oauth2_provider',
     'social_django',
     'corsheaders',
+    'django_filters',
 
     # Local Apps
     "apps.accounts",
+    "apps.appointment",
 
 ]
 
@@ -122,7 +124,14 @@ REST_FRAMEWORK = {
         'apps.accounts.authentication.CookieJWTAuthentication', 
         "rest_framework_simplejwt.authentication.JWTAuthentication",  
         "oauth2_provider.contrib.rest_framework.OAuth2Authentication",
+
     ),
+    
+    "DEFAULT_FILTER_BACKENDS": [
+        "django_filters.rest_framework.DjangoFilterBackend",  # Enables filtering in API views
+    ],
+
+     'DEFAULT_FILTER_BACKENDS': ['django_filters.rest_framework.DjangoFilterBackend'],
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
     ),

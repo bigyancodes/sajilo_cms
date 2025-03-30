@@ -1,13 +1,24 @@
 // src/api/axiosInstance.js
 import axios from "axios";
 
-// Base URL - Ensure this matches your actual Django backend URL
-const API_BASE_URL = "http://localhost:8000/auth/";
+// Base URLs
+const BASE_URL = "http://localhost:8000"; // Root URL without trailing slash
+const AUTH_BASE_URL = `${BASE_URL}/auth/`; // Auth-specific URL
 
-// Create Axios instance with base config
+// Create Axios instance with auth base config
 const axiosInstance = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: AUTH_BASE_URL,
   withCredentials: true, // Essential for cookies to be sent with requests
+  headers: {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  },
+});
+
+// Create a root instance without the /auth/ prefix
+export const rootAxiosInstance = axios.create({
+  baseURL: BASE_URL,
+  withCredentials: true,
   headers: {
     "Content-Type": "application/json",
     Accept: "application/json",
@@ -57,7 +68,7 @@ async function refreshAccessToken() {
     // Make refresh token request with direct axios (not instance)
     const response = await axios({
       method: 'post',
-      url: `${API_BASE_URL}token/refresh/`,
+      url: `${AUTH_BASE_URL}token/refresh/`,
       withCredentials: true,
       headers: {
         'Content-Type': 'application/json',
@@ -147,6 +158,18 @@ axiosInstance.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+// Apply the same interceptor to rootAxiosInstance
+rootAxiosInstance.interceptors.request.use(
+  async (config) => {
+    const csrfToken = localStorage.getItem("csrftoken");
+    if (csrfToken && (config.method === 'post' || config.method === 'put' || config.method === 'delete')) {
+      config.headers["X-CSRFToken"] = csrfToken;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
 // Response Interceptor (Handle 401/403)
 axiosInstance.interceptors.response.use(
   (response) => response,
@@ -187,6 +210,46 @@ axiosInstance.interceptors.response.use(
   }
 );
 
+// Apply the same response interceptor to rootAxiosInstance
+rootAxiosInstance.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+    
+    // Network errors shouldn't trigger token refresh
+    if (!error.response) {
+      return Promise.reject(error);
+    }
+    
+    // If error is 401/403 and we haven't tried refreshing yet
+    if ((error.response.status === 401 || error.response.status === 403) && 
+        !originalRequest._retry && 
+        !originalRequest.url.includes('token/refresh')) {
+      
+      originalRequest._retry = true;
+      
+      // Try to refresh token
+      const refreshed = await refreshAccessToken();
+      if (refreshed) {
+        // Retry the original request
+        return rootAxiosInstance(originalRequest);
+      } else {
+        // If refresh failed and we're not already at the login page
+        if (!window.location.pathname.includes('/login')) {
+          // Remove user data from localStorage
+          localStorage.removeItem('userData');
+          
+          // Redirect to login page after a short delay
+          setTimeout(() => {
+            window.location.href = "/login";
+          }, 100);
+        }
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 // Specialized API function to silently refresh token without redirecting on failure
 export const silentTokenRefresh = async () => {
   try {
@@ -194,7 +257,7 @@ export const silentTokenRefresh = async () => {
     
     const response = await axios({
       method: 'post',
-      url: `${API_BASE_URL}token/refresh/`,
+      url: `${AUTH_BASE_URL}token/refresh/`,
       withCredentials: true,
       headers: {
         'Content-Type': 'application/json',
@@ -219,7 +282,7 @@ export const silentTokenRefresh = async () => {
   }
 };
 
-// API Functions
+// API Functions for auth endpoints
 export const fetchAllDoctors = (url = "doctors/") => axiosInstance.get(url);
 export const fetchDoctorById = (id) => axiosInstance.get(`doctors/${id}/`);
 export const fetchSpecialties = () => axiosInstance.get("specialties/");

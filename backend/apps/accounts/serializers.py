@@ -87,7 +87,8 @@ class StaffUserSerializer(CustomUserSerializer):
                 raise serializers.ValidationError({"license_number": "This field is required for doctors."})
             if not specialty:
                 raise serializers.ValidationError({"specialty": "This field is required for doctors."})
-            if DoctorProfile.objects.filter(license_number=license_number).exclude(user=data.get('user')).exists():
+            # Case-insensitive uniqueness check for license_number
+            if DoctorProfile.objects.filter(license_number__iexact=license_number).exclude(user=data.get('user')).exists():
                 raise serializers.ValidationError({"license_number": "This license number is already in use."})
         elif role in [UserRoles.ADMIN, UserRoles.PATIENT, UserRoles.RECEPTIONIST, UserRoles.PHARMACIST]:
             data.pop('license_number', None)
@@ -140,7 +141,8 @@ class AdminUserSerializer(CustomUserSerializer):
                 raise serializers.ValidationError({"doctor_profile": {"license_number": "This field is required for doctors."}})
             if not specialty:
                 raise serializers.ValidationError({"doctor_profile": {"specialty": "This field is required for doctors."}})
-            if DoctorProfile.objects.filter(license_number=license_number).exclude(user=self.instance).exists():
+            # Case-insensitive uniqueness check for license_number
+            if DoctorProfile.objects.filter(license_number__iexact=license_number).exclude(user=self.instance).exists():
                 raise serializers.ValidationError({"doctor_profile": {"license_number": "This license number is already in use."}})
         return data
 

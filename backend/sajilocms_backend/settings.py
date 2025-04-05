@@ -51,6 +51,8 @@ INSTALLED_APPS = [
     # Local Apps
     "apps.accounts",
     "apps.appointment",
+    "apps.ehr",
+  
 
 ]
 

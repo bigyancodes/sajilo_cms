@@ -27,7 +27,9 @@ SECRET_KEY =env("SECRET_KEY")
 DEBUG = env.bool("DEBUG", default=False)  # Prevent accidental exposure in production
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["127.0.0.1", "localhost"])
 
-
+# Google AI Studio Gemini API settings
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+MOCK_CHATBOT = False # Set to True for mock responses during development
 
 # Application definition
 
@@ -52,6 +54,8 @@ INSTALLED_APPS = [
     "apps.accounts",
     "apps.appointment",
     "apps.ehr",
+    "apps.communication",
+    "apps.chatbot",
   
 
 ]
@@ -231,3 +235,8 @@ LOGGING = {
 
 # ✅ Custom User Model
 AUTH_USER_MODEL = "accounts.CustomUser"
+
+
+# Agora Setup
+AGORA_APP_ID = env("AGORA_APP_ID")
+AGORA_APP_CERTIFICATE = env("AGORA_APP_CERTIFICATE")

@@ -63,12 +63,10 @@ class MedicalRecordSerializer(serializers.ModelSerializer):
     doctor_name = serializers.SerializerMethodField()
     appointment_time = serializers.SerializerMethodField()
     appointment_status = serializers.CharField(source='appointment.status', read_only=True)
-    # Add field for setting previous record by ID
     previous_record_id = serializers.UUIDField(required=False, allow_null=True, write_only=True)
-    # Add serialized information about previous record if it exists
     previous_record_info = serializers.SerializerMethodField()
-    # Add info about follow-up records
     follow_up_records = serializers.SerializerMethodField()
+    patient_id = serializers.SerializerMethodField()  # Added patient_id field
     
     class Meta:
         model = MedicalRecord
@@ -77,10 +75,10 @@ class MedicalRecordSerializer(serializers.ModelSerializer):
             'treatment_plan', 'notes', 'is_locked', 'prescriptions', 'attachments',
             'audit_logs', 'created_at', 'updated_at', 'patient_name', 'doctor_name', 
             'appointment_time', 'appointment_status', 'previous_record', 'previous_record_id',
-            'previous_record_info', 'follow_up_records'
+            'previous_record_info', 'follow_up_records', 'patient_id'  # Added patient_id to fields
         ]
         read_only_fields = ['id', 'is_locked', 'created_at', 'updated_at', 'audit_logs', 
-                           'previous_record_info', 'follow_up_records']
+                           'previous_record_info', 'follow_up_records', 'patient_id']
     
     def get_patient_name(self, obj):
         if obj.appointment.patient:
@@ -116,6 +114,9 @@ class MedicalRecordSerializer(serializers.ModelSerializer):
             ]
         return []
     
+    def get_patient_id(self, obj):
+        return obj.appointment.patient.id if obj.appointment.patient else None
+    
     def validate_previous_record_id(self, value):
         if value:
             try:
@@ -125,28 +126,20 @@ class MedicalRecordSerializer(serializers.ModelSerializer):
         return value
     
     def validate_appointment(self, appointment):
-        # Ensure the appointment is in CONFIRMED or COMPLETED status
         if appointment.status not in [AppointmentStatus.CONFIRMED, AppointmentStatus.COMPLETED]:
             raise serializers.ValidationError(
                 "Medical records can only be created for confirmed or completed appointments"
             )
-        
-        # Check if medical record already exists
         if hasattr(appointment, 'medical_record') and self.instance is None:
             raise serializers.ValidationError("Medical record already exists for this appointment")
-        
         return appointment
     
     def validate(self, data):
-        # Additional validation logic
         user = self.context['request'].user
-        
-        # Check if user is the doctor for this appointment
         if user.role == UserRoles.DOCTOR and data.get('appointment') and data['appointment'].doctor.id != user.id:
             raise serializers.ValidationError(
                 {"appointment": "You can only create medical records for your own appointments"}
             )
-        
         return data
     
     def create(self, validated_data):
@@ -154,14 +147,11 @@ class MedicalRecordSerializer(serializers.ModelSerializer):
         previous_record_id = validated_data.pop('previous_record_id', None)
         request = self.context.get('request')
         
-        # Set created_by to the current user
         if request and request.user:
             validated_data['created_by'] = request.user
         
-        # Create the medical record
         medical_record = MedicalRecord.objects.create(**validated_data)
         
-        # Set previous record if id was provided
         if previous_record_id:
             try:
                 previous_record = MedicalRecord.objects.get(id=previous_record_id)
@@ -170,7 +160,6 @@ class MedicalRecordSerializer(serializers.ModelSerializer):
             except MedicalRecord.DoesNotExist:
                 pass
         
-        # Create prescriptions
         for prescription_data in prescriptions_data:
             Prescription.objects.create(medical_record=medical_record, **prescription_data)
         
@@ -178,29 +167,22 @@ class MedicalRecordSerializer(serializers.ModelSerializer):
     
     def update(self, instance, validated_data):
         if instance.is_locked:
-            # Only allow updating notes when record is locked
             notes = validated_data.pop('notes', None)
             if notes is not None:
                 instance.notes = notes
                 instance.save(update_fields=['notes', 'updated_at'])
-            
-            # Reject any other changes
             if validated_data:
                 raise serializers.ValidationError(
                     "This medical record is locked. Only notes can be updated."
                 )
-            
             return instance
         
-        # Process prescriptions
         prescriptions_data = validated_data.pop('prescriptions', None)
         if prescriptions_data is not None:
-            # Replace existing prescriptions with new ones
             instance.prescriptions.all().delete()
             for prescription_data in prescriptions_data:
                 Prescription.objects.create(medical_record=instance, **prescription_data)
         
-        # Handle previous_record_id if provided
         previous_record_id = validated_data.pop('previous_record_id', None)
         if previous_record_id:
             try:
@@ -209,7 +191,6 @@ class MedicalRecordSerializer(serializers.ModelSerializer):
             except MedicalRecord.DoesNotExist:
                 pass
         
-        # Update other fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         
@@ -227,22 +208,15 @@ class MedicalAttachmentCreateSerializer(serializers.ModelSerializer):
         }
     
     def validate_medical_record(self, medical_record):
-        # Check if the user has permission to add attachments
         user = self.context['request'].user
-        
-        # Doctors can only add attachments to their own appointments
         if user.role == UserRoles.DOCTOR and medical_record.appointment.doctor.id != user.id:
             raise serializers.ValidationError(
                 "You can only add attachments to your own appointments"
             )
-        
         return medical_record
     
     def create(self, validated_data):
         request = self.context.get('request')
-        
-        # Set uploaded_by to the current user
         if request and request.user:
             validated_data['uploaded_by'] = request.user
-        
         return super().create(validated_data)

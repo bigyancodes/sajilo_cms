@@ -22,4 +22,6 @@ urlpatterns = [
     path('auth/', include('apps.accounts.urls')),
     path('appointment/', include('apps.appointment.urls')),
     path('ehr/', include('apps.ehr.urls')),
+    path('communication/', include('apps.communication.urls')),
+    path('chatbot/', include('apps.chatbot.urls')),
 ]

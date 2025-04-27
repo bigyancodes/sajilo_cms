@@ -164,7 +164,6 @@ class AdminDoctorAppointmentStatsView(generics.ListAPIView):
         
         stats.sort(key=lambda x: x['total_appointments'], reverse=True)
         return stats
-# === Time Off Management ===
 
 # === Time Off Management ===
 
@@ -407,172 +406,139 @@ class GetAvailableSlotsView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated, IsVerified]
     
     def get(self, request, *args, **kwargs):
+        """Get available slots for a specific date"""
         doctor_id = request.query_params.get('doctor_id')
         date_str = request.query_params.get('date')
         
-        if not doctor_id:
-            return Response({"error": "doctor_id is required"}, status=status.HTTP_400_BAD_REQUEST)
-        
-        if not date_str:
-            target_date = timezone.now().date()
-        else:
-            try:
-                target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-            except ValueError:
-                return Response({"error": "Invalid date format. Use YYYY-MM-DD"}, 
-                                status=status.HTTP_400_BAD_REQUEST)
+        if not doctor_id or not date_str:
+            return Response(
+                {"error": "doctor_id and date are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
         try:
-            doctor = User.objects.get(id=doctor_id, role='DOCTOR')
+            doctor = User.objects.get(id=doctor_id, role=UserRoles.DOCTOR)
+            target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            
+            # Convert the date to a timezone-aware datetime at the start of the day
+            target_datetime = timezone.make_aware(
+                datetime.combine(target_date, time.min),
+                timezone.get_current_timezone()
+            )
+            
+            available_slots = self._get_available_time_slots(doctor, target_datetime)
+            
+            return Response({
+                "slots": available_slots,
+                "message": f"Available slots for {target_date.strftime('%B %d, %Y')}"
+            })
+            
         except User.DoesNotExist:
-            return Response({"error": f"Doctor with ID {doctor_id} not found"}, 
-                            status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"error": "Doctor not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except ValueError:
+            return Response(
+                {"error": "Invalid date format. Use YYYY-MM-DD"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    def _get_available_time_slots(self, doctor, target_datetime):
+        """Get available time slots for a doctor on a specific date"""
+        # Get the day of week (0=Monday, 6=Sunday)
+        day_of_week = target_datetime.weekday()
+        specific_date = target_datetime.date()
         
-        available_slots = self._get_available_time_slots(doctor, target_date)
-        
-        day_of_week = target_date.weekday()
-        day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-        day_name = day_names[day_of_week]
-        
-        has_slots = AvailableTimeSlot.objects.filter(
+        # Get doctor's regular schedule for this day
+        regular_slots = AvailableTimeSlot.objects.filter(
             doctor=doctor,
             day_of_week=day_of_week
-        ).exists()
+        )
         
-        response_data = {
-            "doctor_id": doctor.id,
-            "doctor_name": f"Dr. {doctor.first_name} {doctor.last_name}",
-            "date": target_date.strftime('%Y-%m-%d'),
-            "day": day_name,
-            "slots": available_slots
-        }
-        
-        if not has_slots:
-            response_data["message"] = f"Doctor has no available slots defined for {day_name}s"
-        
-        return Response(response_data)
-    
-    def post(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        
-        doctor = serializer.validated_data['doctor']
-        target_date = serializer.validated_data['date']
-        
-        available_slots = self._get_available_time_slots(doctor, target_date)
-        
-        day_of_week = target_date.weekday()
-        day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-        day_name = day_names[day_of_week]
-        
-        has_slots = AvailableTimeSlot.objects.filter(
-            doctor=doctor,
-            day_of_week=day_of_week
-        ).exists()
-        
-        response_data = {
-            "doctor_id": doctor.id,
-            "doctor_name": f"Dr. {doctor.first_name} {doctor.last_name}",
-            "date": target_date.strftime('%Y-%m-%d'),
-            "day": day_name,
-            "slots": available_slots
-        }
-        
-        if not has_slots:
-            response_data["message"] = f"Doctor has no available slots defined for {day_name}s"
-        
-        return Response(response_data)
-    
-    def _get_available_time_slots(self, doctor, target_date):
-        """
-        Calculate available time slots for a doctor on a specific date,
-        taking into account their schedule, existing appointments, and time off.
-        """
+        # Get any one-time slots for this specific date
         try:
-            day_of_week = target_date.weekday()
-            available_slots = AvailableTimeSlot.objects.filter(
+            one_time_slots = AvailableTimeSlot.objects.filter(
                 doctor=doctor,
-                day_of_week=day_of_week
-            ).order_by('start_time')
-            
-            if not available_slots.exists():
-                logger.info(f"No available slots found for doctor {doctor.id} on day {day_of_week}")
-                return []
-            
-            # Get current time
-            now = timezone.now()
-            
-            # Convert all times to aware datetimes
-            available_datetimes = []
-            for slot in available_slots:
-                # Create datetime objects for the slot's start and end times
-                naive_start = datetime.combine(target_date, slot.start_time)
-                start_datetime = timezone.make_aware(naive_start)
-                
-                naive_end = datetime.combine(target_date, slot.end_time)
-                end_datetime = timezone.make_aware(naive_end)
-                
-                # Generate appointment slots within this available time window
-                current = start_datetime
-                while current + timedelta(minutes=APPOINTMENT_DURATION_MINUTES) <= end_datetime:
-                    available_datetimes.append({
-                        'start': current,
-                        'end': current + timedelta(minutes=APPOINTMENT_DURATION_MINUTES)
-                    })
-                    current += timedelta(minutes=APPOINTMENT_DURATION_MINUTES)
-            
-            # Get existing appointments and time offs
-            existing_appointments = Appointment.objects.filter(
-                doctor=doctor,
-                appointment_time__date=target_date,
-                status__in=[AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED]
+                specific_date=specific_date,
+                is_recurring=False
             )
-            
-            time_offs = TimeOff.objects.filter(
-                doctor=doctor,
-                is_approved=True,
-                start_time__date__lte=target_date,
-                end_time__date__gte=target_date
-            )
-            
-            # Filter slots based on conflicts with appointments, time-offs, and past times
-            available_slots = []
-            for slot in available_datetimes:
-                # Skip past slots
-                if slot['start'] < now:
-                    continue
-                
-                conflict = False
-                
-                # Check conflicts with existing appointments
-                for appointment in existing_appointments:
-                    # Calculate appointment end time if not available directly
-                    appt_end_time = getattr(appointment, 'end_time', None)
-                    if appt_end_time is None:
-                        appt_end_time = appointment.appointment_time + timedelta(minutes=APPOINTMENT_DURATION_MINUTES)
-                    
-                    if (slot['start'] < appt_end_time and
-                        slot['end'] > appointment.appointment_time):
-                        conflict = True
-                        break
-                
-                # Check conflicts with time offs
-                for time_off in time_offs:
-                    if (slot['start'] < time_off.end_time and
-                        slot['end'] > time_off.start_time):
-                        conflict = True
-                        break
-                
-                if not conflict:
-                    available_slots.append({
-                        'start': slot['start'].strftime('%Y-%m-%d %H:%M:%S'),
-                        'end': slot['end'].strftime('%Y-%m-%d %H:%M:%S')
-                    })
-            
-            return available_slots
-        except Exception as e:
-            logger.error(f"Error in _get_available_time_slots: {str(e)}")
+        except:
+            one_time_slots = []
+        
+        # Combine regular and one-time slots
+        all_slots = list(regular_slots) + list(one_time_slots)
+        
+        if not all_slots:
             return []
+        
+        # Get existing appointments for this date - use date range to ensure timezone safety
+        day_start = timezone.make_aware(datetime.combine(specific_date, time.min))
+        day_end = timezone.make_aware(datetime.combine(specific_date, time.max))
+        
+        appointments = Appointment.objects.filter(
+            doctor=doctor,
+            appointment_time__gte=day_start,
+            appointment_time__lte=day_end,
+            status__in=[AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED]
+        )
+        
+        # Get approved time off periods
+        time_off = TimeOff.objects.filter(
+            doctor=doctor,
+            start_time__date__lte=specific_date,
+            end_time__date__gte=specific_date,
+            is_approved=True
+        )
+        
+        # Current timezone
+        current_tz = timezone.get_current_timezone()
+        
+        available_slots = []
+        
+        for slot in all_slots:
+            # Convert slot times to timezone-aware datetimes
+            slot_start = timezone.make_aware(
+                datetime.combine(specific_date, slot.start_time),
+                current_tz
+            )
+            slot_end = timezone.make_aware(
+                datetime.combine(specific_date, slot.end_time),
+                current_tz
+            )
+            
+            # Check if slot is within time off period
+            is_time_off = any(
+                off.start_time <= slot_start and off.end_time >= slot_end
+                for off in time_off
+            )
+            
+            if is_time_off:
+                continue
+            
+            # Generate appointment slots within the available time
+            current_time = slot_start
+            while current_time + timedelta(minutes=APPOINTMENT_DURATION_MINUTES) <= slot_end:
+                slot_end_time = current_time + timedelta(minutes=APPOINTMENT_DURATION_MINUTES)
+                
+                # Check if this slot overlaps with any existing appointments
+                is_available = not any(
+                    (app.appointment_time <= current_time and app.end_time > current_time) or
+                    (app.appointment_time < slot_end_time and app.end_time >= slot_end_time) or
+                    (current_time <= app.appointment_time and slot_end_time >= app.end_time)
+                    for app in appointments
+                )
+                
+                if is_available:
+                    # Ensure times are in the current timezone for consistent display
+                    available_slots.append({
+                        'start': current_time.isoformat(),
+                        'end': slot_end_time.isoformat()
+                    })
+                
+                current_time = slot_end_time
+        
+        return available_slots
 
 # === Appointment Management ===
 
@@ -647,6 +613,9 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         user = self.request.user
+        
+        # Note: timezone conversion is now handled in the serializer's validate method
+        
         if user.role == UserRoles.PATIENT:
             serializer.save(patient=user, created_by=user)
         else:
@@ -762,3 +731,47 @@ class PatientAppointmentHistoryView(generics.ListAPIView):
             doctor=self.request.user,
             patient_id=patient_id
         ).order_by('-appointment_time')
+
+# === NEW: RECEPTIONIST APPOINTMENTS VIEW ===
+class ReceptionistAppointmentListView(generics.ListAPIView):
+    """
+    Receptionist view to list all appointments with filtering options.
+    Similar to AdminAppointmentListView, but permission is for Receptionist.
+    """
+    permission_classes = [IsAuthenticated, IsVerified, IsReceptionist]
+    serializer_class = AppointmentSerializer
+
+    def get_queryset(self):
+        queryset = Appointment.objects.all().select_related('doctor', 'patient')
+        return self._apply_filters(queryset)
+    
+    def _apply_filters(self, queryset):
+        doctor_id = self.request.query_params.get('doctor_id')
+        if doctor_id:
+            queryset = queryset.filter(doctor_id=doctor_id)
+        
+        status = self.request.query_params.get('status')
+        if status:
+            queryset = queryset.filter(status=status)
+        
+        date_from = self.request.query_params.get('date_from')
+        if date_from:
+            try:
+                date_from_dt = datetime.strptime(date_from, '%Y-%m-%d')
+                date_from_dt = timezone.make_aware(date_from_dt)
+                queryset = queryset.filter(appointment_time__gte=date_from_dt)
+            except ValueError:
+                pass
+
+        date_to = self.request.query_params.get('date_to')
+        if date_to:
+            try:
+                date_to_dt = datetime.strptime(date_to, '%Y-%m-%d')
+                date_to_dt = timezone.make_aware(date_to_dt).replace(hour=23, minute=59, second=59)
+                queryset = queryset.filter(appointment_time__lte=date_to_dt)
+            except ValueError:
+                pass
+
+        return queryset.order_by('-appointment_time')
+
+

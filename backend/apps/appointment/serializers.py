@@ -23,6 +23,30 @@ class TimeOffSerializer(serializers.ModelSerializer):
     def get_doctor_name(self, obj):
         return f"Dr. {obj.doctor.first_name} {obj.doctor.last_name}"
     
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        
+        # Convert time fields to ISO format with timezone info
+        if hasattr(instance, 'start_time') and instance.start_time:
+            # Make sure it's timezone-aware
+            if instance.start_time.tzinfo is None:
+                start_time = timezone.make_aware(instance.start_time, timezone.utc)
+            else:
+                start_time = instance.start_time
+            
+            representation['start_time'] = start_time.isoformat()
+        
+        if hasattr(instance, 'end_time') and instance.end_time:
+            # Make sure it's timezone-aware
+            if instance.end_time.tzinfo is None:
+                end_time = timezone.make_aware(instance.end_time, timezone.utc)
+            else:
+                end_time = instance.end_time
+            
+            representation['end_time'] = end_time.isoformat()
+        
+        return representation
+    
     def validate(self, data):
         if data['start_time'] >= data['end_time']:
             raise serializers.ValidationError("End time must be after start time")
@@ -144,6 +168,25 @@ class AppointmentSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         # Get the default representation
         representation = super().to_representation(instance)
+        
+        # Ensure appointment times are in ISO format with timezone info
+        if hasattr(instance, 'appointment_time') and instance.appointment_time:
+            # Make sure it's timezone-aware and in UTC
+            if instance.appointment_time.tzinfo is None:
+                appointment_time = timezone.make_aware(instance.appointment_time, timezone.utc)
+            else:
+                appointment_time = instance.appointment_time
+            
+            representation['appointment_time'] = appointment_time.isoformat()
+        
+        if hasattr(instance, 'end_time') and instance.end_time:
+            # Make sure it's timezone-aware and in UTC
+            if instance.end_time.tzinfo is None:
+                end_time = timezone.make_aware(instance.end_time, timezone.utc)
+            else:
+                end_time = instance.end_time
+                
+            representation['end_time'] = end_time.isoformat()
         
         # If this is a registered patient, populate the patient details fields
         if instance.patient:

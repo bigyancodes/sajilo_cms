@@ -1,5 +1,4 @@
-// src/components/appointments/DoctorAppointments.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   fetchDoctorAppointments,
   cancelAppointment,
@@ -15,12 +14,9 @@ const DoctorAppointments = () => {
   const [activeTab, setActiveTab] = useState('upcoming');
   const [statusFilter, setStatusFilter] = useState('');
   const [actionInProgress, setActionInProgress] = useState(null);
-  
-  useEffect(() => {
-    loadAppointments();
-  }, [activeTab, statusFilter]);
-  
-  const loadAppointments = async () => {
+
+  // Memoize loadAppointments with useCallback
+  const loadAppointments = useCallback(async () => {
     try {
       setLoading(true);
       setError('');
@@ -33,14 +29,18 @@ const DoctorAppointments = () => {
     } finally {
       setLoading(false);
     }
-  };
-  
+  }, [activeTab, statusFilter]); // Dependencies of loadAppointments
+
+  // Fix: Use the memoized loadAppointments in the dependency array
+  useEffect(() => {
+    loadAppointments();
+  }, [loadAppointments]);
+
   const handleCancelAppointment = async (id) => {
     try {
       setActionInProgress(id);
       await cancelAppointment(id);
       
-      // Update the list to reflect the cancellation
       setAppointments(prev => 
         prev.map(appointment => 
           appointment.id === id 
@@ -48,7 +48,6 @@ const DoctorAppointments = () => {
             : appointment
         )
       );
-      
     } catch (err) {
       console.error('Failed to cancel appointment:', err);
       setError('Failed to cancel appointment. It may be too close to the appointment time.');
@@ -62,7 +61,6 @@ const DoctorAppointments = () => {
       setActionInProgress(id);
       await confirmAppointment(id);
       
-      // Update the list to reflect the confirmation
       setAppointments(prev => 
         prev.map(appointment => 
           appointment.id === id 
@@ -70,7 +68,6 @@ const DoctorAppointments = () => {
             : appointment
         )
       );
-      
     } catch (err) {
       console.error('Failed to confirm appointment:', err);
       setError('Failed to confirm appointment. Please try again.');
@@ -84,7 +81,6 @@ const DoctorAppointments = () => {
       setActionInProgress(id);
       await completeAppointment(id);
       
-      // Update the list to reflect completion
       setAppointments(prev => 
         prev.map(appointment => 
           appointment.id === id 
@@ -92,7 +88,6 @@ const DoctorAppointments = () => {
             : appointment
         )
       );
-      
     } catch (err) {
       console.error('Failed to complete appointment:', err);
       setError('Failed to mark appointment as completed. Please try again.');
@@ -110,14 +105,13 @@ const DoctorAppointments = () => {
       { value: 'CANCELLED', label: 'Cancelled' }
     ];
     
-    // Only show "MISSED" option for past appointments
     if (activeTab === 'past') {
       options.push({ value: 'MISSED', label: 'Missed' });
     }
     
     return options;
   };
-  
+
   return (
     <div className="bg-white shadow-md rounded-lg overflow-hidden">
       <div className="bg-blue-600 p-6 text-white">

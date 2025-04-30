@@ -1,6 +1,5 @@
-// src/components/appointments/AppointmentCard.jsx
 import React from 'react';
-import { format, parseISO } from 'date-fns';
+import { getDateAndTime } from '../../utils/dateUtils';
 
 const getStatusBadgeColor = (status) => {
   switch (status) {
@@ -34,21 +33,9 @@ const AppointmentCard = ({
   isPatientView = false,
   isDoctorView = false
 }) => {
-  
-  const formatDateTime = (dateTimeStr) => {
-    try {
-      const dateTime = parseISO(dateTimeStr);
-      return {
-        date: format(dateTime, 'EEE, MMM d, yyyy'),
-        time: format(dateTime, 'h:mm a')
-      };
-    } catch (e) {
-      return { date: 'Invalid date', time: 'Invalid time' };
-    }
-  };
-  
-  const { date, time } = formatDateTime(appointment.appointment_time);
-  
+  // Use the utility function for consistent formatting
+  const { date, time } = getDateAndTime(appointment.appointment_time);
+
   return (
     <div className="p-6 hover:bg-gray-50">
       <div className="flex flex-col md:flex-row md:justify-between md:items-center">
@@ -64,7 +51,7 @@ const AppointmentCard = ({
           
           <h3 className="text-lg font-medium text-gray-900 mt-2">
             {isPatientView ? (
-              <>Dr. {appointment.doctor_name}</>
+              <>{appointment.doctor_name}</>
             ) : (
               <>{appointment.patient_name || 'Patient'}</>
             )}

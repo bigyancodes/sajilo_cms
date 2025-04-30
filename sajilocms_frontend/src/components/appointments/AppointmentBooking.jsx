@@ -1,10 +1,9 @@
-// src/components/appointments/AppointmentBooking.jsx
 import React, { useState, useEffect, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContext';
 import { fetchDoctorById } from '../../api/axiosInstance';
 import { fetchAvailableSlots, createAppointment } from '../../api/appointmentService';
-import { format, parseISO } from 'date-fns';
+import { formatTime, formatDateForInput } from '../../utils/dateUtils';
 
 const AppointmentBooking = () => {
   const { doctorId } = useParams();
@@ -13,7 +12,7 @@ const AppointmentBooking = () => {
   
   const [doctor, setDoctor] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [date, setDate] = useState(formatDateForInput(new Date()));
   const [availableSlots, setAvailableSlots] = useState([]);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [reason, setReason] = useState('');
@@ -156,16 +155,6 @@ const AppointmentBooking = () => {
     }
   };
   
-  // Format time for display
-  const formatTime = (timeString) => {
-    try {
-      return format(parseISO(timeString), 'h:mm a');
-    } catch (e) {
-      console.error("Error formatting time:", e);
-      return timeString;
-    }
-  };
-  
   if (!doctorId) {
     return (
       <div className="min-h-screen bg-gray-50 py-8 px-4">
@@ -230,7 +219,7 @@ const AppointmentBooking = () => {
                     setDate(e.target.value);
                     setSelectedSlot(null); // Reset selected slot when date changes
                   }}
-                  min={format(new Date(), 'yyyy-MM-dd')}
+                  min={formatDateForInput(new Date())}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>

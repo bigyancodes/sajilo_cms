@@ -1,10 +1,10 @@
+
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
 
 app_name = "appointments"
 
-# Create a router for ViewSets
 router = DefaultRouter()
 router.register(r'appointments', views.AppointmentViewSet, basename='appointment')
 router.register(r'time-offs', views.TimeOffViewSet, basename='time-off')
@@ -28,7 +28,5 @@ urlpatterns = [
     # Available slots
     path('get-available-slots/', views.GetAvailableSlotsView.as_view(), name='get-available-slots'),
     path('create-available-slot/', views.CreateAvailableSlotView.as_view(), name='create-available-slot'),
-    
-    # Added alias for GET method clarity
     path('available-slots-by-date/', views.GetAvailableSlotsView.as_view(), name='available-slots-by-date'),
 ]

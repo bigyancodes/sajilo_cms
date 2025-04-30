@@ -1,8 +1,6 @@
-// src/components/appointments/PatientAppointments.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchPatientAppointments, cancelAppointment } from '../../api/appointmentService';
-import { format, parseISO } from 'date-fns';
 import AppointmentCard from './AppointmentCard';
 
 const PatientAppointments = () => {
@@ -11,12 +9,9 @@ const PatientAppointments = () => {
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('upcoming');
   const [cancellingId, setCancellingId] = useState(null);
-  
-  useEffect(() => {
-    loadAppointments();
-  }, [activeTab]);
-  
-  const loadAppointments = async () => {
+
+  // Memoize loadAppointments with useCallback
+  const loadAppointments = useCallback(async () => {
     try {
       setLoading(true);
       setError('');
@@ -29,14 +24,17 @@ const PatientAppointments = () => {
     } finally {
       setLoading(false);
     }
-  };
-  
+  }, [activeTab]); // activeTab is a dependency of loadAppointments
+
+  useEffect(() => {
+    loadAppointments();
+  }, [loadAppointments]); // Only depends on the memoized loadAppointments
+
   const handleCancelAppointment = async (id) => {
     try {
       setCancellingId(id);
       await cancelAppointment(id);
       
-      // Update the list to reflect the cancellation
       setAppointments(prev => 
         prev.map(appointment => 
           appointment.id === id 
@@ -44,7 +42,6 @@ const PatientAppointments = () => {
             : appointment
         )
       );
-      
     } catch (err) {
       console.error('Failed to cancel appointment:', err);
       setError('Failed to cancel appointment. It may be too close to the appointment time.');
@@ -52,7 +49,7 @@ const PatientAppointments = () => {
       setCancellingId(null);
     }
   };
-  
+
   return (
     <div className="bg-white shadow-md rounded-lg overflow-hidden">
       <div className="bg-blue-600 p-6 text-white">
@@ -101,7 +98,7 @@ const PatientAppointments = () => {
         <div className="p-8 text-center">
           <div className="bg-gray-100 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
             <svg className="w-8 h-8 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V}};3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
           </div>
           <h3 className="text-lg font-medium text-gray-800">No {activeTab} appointments</h3>

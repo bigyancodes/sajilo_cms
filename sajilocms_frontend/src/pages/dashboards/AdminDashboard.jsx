@@ -6,6 +6,8 @@ import AdminAppointments from "../../components/appointments/AdminAppointments";
 import TimeOffManagement from "../../components/appointments/TimeOffManagement";
 import AdminEHRDashboard from "../../components/ehr/AdminEHRDashboard";
 import { verifyStaff } from "../../api/axiosInstance";
+import ReportsPage from "../pharmacy/ReportsPage";
+import AuditLogsPage from "../pharmacy/AuditLogsPage";
 
 const AdminDashboard = () => {
   const [refresh, setRefresh] = useState(false);
@@ -70,6 +72,26 @@ const AdminDashboard = () => {
           >
             Time Off Management
           </button>
+          <button
+            className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
+              activeTab === 4
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+            onClick={() => setActiveTab(4)}
+          >
+            Pharmacy Reports
+          </button>
+          <button
+            className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
+              activeTab === 5
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+            onClick={() => setActiveTab(5)}
+          >
+            Pharmacy Audit Logs
+          </button>
         </nav>
       </div>
       
@@ -91,6 +113,14 @@ const AdminDashboard = () => {
       
       {activeTab === 3 && (
         <TimeOffManagement />
+      )}
+
+      {activeTab === 4 && (
+        <ReportsPage />
+      )}
+
+      {activeTab === 5 && (
+        <AuditLogsPage />
       )}
     </div>
   );

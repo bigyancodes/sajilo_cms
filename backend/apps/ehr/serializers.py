@@ -3,12 +3,25 @@ from django.utils import timezone
 from .models import MedicalRecord, Prescription, MedicalAttachment, MedicalRecordAudit
 from apps.appointment.models import Appointment, AppointmentStatus
 from apps.accounts.models import UserRoles
+from apps.pharmacy.models import Medicine
+from apps.pharmacy.serializers import MedicineSerializer
 
 class PrescriptionSerializer(serializers.ModelSerializer):
+    medicine = MedicineSerializer(read_only=True)
+    medicine_id = serializers.PrimaryKeyRelatedField(
+        queryset=Medicine.objects.all(),
+        source='medicine',
+        write_only=True
+    )
+
     class Meta:
         model = Prescription
-        fields = ['id', 'medication', 'dosage', 'frequency', 'duration', 'instructions', 'created_at']
-        read_only_fields = ['id', 'created_at']
+        fields = [
+            'id', 'medical_record', 'medicine', 'medicine_id', 'quantity',
+            'dosage', 'frequency', 'duration', 'instructions',
+            'fulfillment_status', 'created_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'fulfillment_status']
 
 class MedicalAttachmentSerializer(serializers.ModelSerializer):
     file_url = serializers.SerializerMethodField()
@@ -66,7 +79,7 @@ class MedicalRecordSerializer(serializers.ModelSerializer):
     previous_record_id = serializers.UUIDField(required=False, allow_null=True, write_only=True)
     previous_record_info = serializers.SerializerMethodField()
     follow_up_records = serializers.SerializerMethodField()
-    patient_id = serializers.SerializerMethodField()  # Added patient_id field
+    patient_id = serializers.SerializerMethodField()
     
     class Meta:
         model = MedicalRecord
@@ -75,7 +88,7 @@ class MedicalRecordSerializer(serializers.ModelSerializer):
             'treatment_plan', 'notes', 'is_locked', 'prescriptions', 'attachments',
             'audit_logs', 'created_at', 'updated_at', 'patient_name', 'doctor_name', 
             'appointment_time', 'appointment_status', 'previous_record', 'previous_record_id',
-            'previous_record_info', 'follow_up_records', 'patient_id'  # Added patient_id to fields
+            'previous_record_info', 'follow_up_records', 'patient_id'
         ]
         read_only_fields = ['id', 'is_locked', 'created_at', 'updated_at', 'audit_logs', 
                            'previous_record_info', 'follow_up_records', 'patient_id']

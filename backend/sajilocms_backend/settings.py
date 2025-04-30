@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     "apps.ehr",
     "apps.communication",
     "apps.chatbot",
+    "apps.pharmacy",
   
 
 ]

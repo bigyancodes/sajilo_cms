@@ -87,7 +87,7 @@ class MedicalRecordAuditAdmin(admin.ModelAdmin):
 
 @admin.register(Prescription)
 class PrescriptionAdmin(admin.ModelAdmin):
-    list_display = ['id', 'medication', 'dosage', 'frequency', 'medical_record', 'created_at']
+    list_display = ['id', 'medicine', 'dosage', 'frequency', 'medical_record', 'created_at']
     list_filter = ['created_at']
-    search_fields = ['medication', 'instructions']
+    search_fields = ['medicine__name', 'instructions']
     readonly_fields = ['created_at']

@@ -24,4 +24,5 @@ urlpatterns = [
     path('ehr/', include('apps.ehr.urls')),
     path('communication/', include('apps.communication.urls')),
     path('chatbot/', include('apps.chatbot.urls')),
+    path('api/pharmacy/', include('apps.pharmacy.urls', namespace='pharmacy')),
 ]

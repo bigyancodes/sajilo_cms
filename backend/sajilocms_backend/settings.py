@@ -240,4 +240,22 @@ AUTH_USER_MODEL = "accounts.CustomUser"
 
 # Agora Setup
 AGORA_APP_ID = env("AGORA_APP_ID")
+<<<<<<< HEAD
 AGORA_APP_CERTIFICATE = env("AGORA_APP_CERTIFICATE")
+=======
+AGORA_APP_CERTIFICATE = env("AGORA_APP_CERTIFICATE")
+
+
+
+# Email configuration for SendGrid SMTP Relay using environment variables
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.sendgrid.net'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'apikey'  # This is always 'apikey' for SendGrid SMTP
+EMAIL_HOST_PASSWORD = env('SENDGRID_API_KEY')  # Load API key from .env using env()
+DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL')
+
+# Stripe Settings
+STRIPE_PUBLIC_KEY = env('STRIPE_PUBLIC_KEY')
+STRIPE_SECRET_KEY = env('STRIPE_SECRET_KEY')

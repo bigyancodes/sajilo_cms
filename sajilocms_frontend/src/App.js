@@ -15,6 +15,10 @@ import AppointmentBooking from "./components/appointments/AppointmentBooking";
 import ChatRoom from "./components/communication/ChatRoom";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Chatbot from "./components/chatbot/Chatbot"; // Import the Chatbot component
+import OrderMedicinePage from "./pages/patient/OrderMedicinePage"; // Import OrderMedicinePage
+import PatientPharmacyPage from "./pages/patient/PatientPharmacyPage"; // Import the main pharmacy page
+import PaymentSuccessPage from "./pages/patient/PaymentSuccessPage"; // Import payment success page
+import PaymentCancelPage from "./pages/patient/PaymentCancelPage"; // Import payment cancel page
 
 const Home = () => (
   <div className="min-h-screen flex items-center justify-center bg-gray-100">
@@ -45,6 +49,18 @@ function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/unauthorized" element={<UnauthorizedPage />} />
           <Route path="/doctors" element={<DoctorList />} />
+
+          {/* Payment Routes */}
+          <Route path="/payment-success" element={
+            <ProtectedRoute roles={["PATIENT"]}>
+              <PaymentSuccessPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/payment-cancel" element={
+            <ProtectedRoute roles={["PATIENT"]}>
+              <PaymentCancelPage />
+            </ProtectedRoute>
+          } />
 
           {/* Protected Routes */}
           <Route
@@ -84,6 +100,14 @@ function App() {
             element={
               <ProtectedRoute roles={["PATIENT"]}>
                 <PatientDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/patient/order-medicine"
+            element={
+              <ProtectedRoute roles={["PATIENT"]}>
+                <PatientPharmacyPage />
               </ProtectedRoute>
             }
           />

@@ -13,6 +13,12 @@ from .serializers import (
 from apps.accounts.permissions import IsPharmacist, IsPatient, IsAdminOrSuperuser
 from apps.accounts.models import UserRoles  # Add this import
 from rest_framework import serializers
+import stripe
+import logging
+from django.conf import settings
+from django.db import transaction
+
+logger = logging.getLogger(__name__)
 
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 20
@@ -156,7 +162,7 @@ class OrderDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 class FulfillOrderView(APIView):
     permission_classes = [IsPharmacist]
-
+    
     def post(self, request, order_id):
         try:
             order = Order.objects.get(id=order_id)
@@ -274,3 +280,190 @@ class AuditLogListView(generics.ListAPIView):
     pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['action', 'model_name', 'performed_by']
+
+class StripePaymentView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def post(self, request, billing_id):
+        try:
+            # Initialize Stripe with the API key from settings
+            stripe.api_key = settings.STRIPE_SECRET_KEY
+            
+            # Get the billing record
+            billing = Billing.objects.select_related(
+                'order', 'order__patient'
+            ).prefetch_related(
+                'order__ordermedicine_set', 
+                'order__ordermedicine_set__medicine'
+            ).get(id=billing_id)
+            
+            # Ensure the user is the patient who owns this order
+            if request.user.role != UserRoles.PATIENT or request.user.id != billing.order.patient.id:
+                return Response(
+                    {"error": "You are not authorized to process payment for this order"},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Ensure the billing is unpaid
+            if billing.payment_status == 'PAID':
+                return Response(
+                    {"error": "This order has already been paid for"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Create line items for Stripe checkout
+            line_items = []
+            for order_medicine in billing.order.ordermedicine_set.all():
+                medicine = order_medicine.medicine
+                
+                # Convert from Django Decimal to cents (int) for Stripe
+                unit_amount = int(float(medicine.price) * 100)
+                
+                line_items.append({
+                    'price_data': {
+                        'currency': 'usd',
+                        'product_data': {
+                            'name': medicine.name,
+                            'description': medicine.description or f'Generic: {medicine.generic_name}',
+                        },
+                        'unit_amount': unit_amount,
+                    },
+                    'quantity': order_medicine.quantity,
+                })
+                
+            # Create Stripe checkout session
+            # Use the request's origin to build the correct URLs
+            origin = request.build_absolute_uri('/').rstrip('/')
+            frontend_base_url = origin.replace(':8000', ':3000')  # Replace backend port with frontend port
+            
+            logger.info(f"Using frontend base URL: {frontend_base_url}")
+            
+            success_url = f"{frontend_base_url}/payment-success?billing_id={billing_id}"
+            cancel_url = f"{frontend_base_url}/payment-cancel?billing_id={billing_id}"
+            
+            logger.info(f"Success URL: {success_url}")
+            logger.info(f"Cancel URL: {cancel_url}")
+            
+            checkout_session = stripe.checkout.Session.create(
+                payment_method_types=['card'],
+                line_items=line_items,
+                mode='payment',
+                success_url=success_url,
+                cancel_url=cancel_url,
+                client_reference_id=str(billing.id),
+                customer_email=request.user.email,
+                metadata={
+                    'billing_id': billing.id,
+                    'order_id': billing.order.id,
+                    'user_id': request.user.id,
+                }
+            )
+            
+            # Return the session ID to the frontend
+            return Response({
+                'sessionId': checkout_session.id,
+                'url': checkout_session.url
+            })
+            
+        except Billing.DoesNotExist:
+            return Response(
+                {"error": "Billing record not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except stripe.error.StripeError as e:
+            return Response(
+                {"error": f"Stripe error: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            logger.exception(f"Payment processing error: {str(e)}")
+            return Response(
+                {"error": "An error occurred while processing your payment"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+class PaymentSuccessView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request):
+        logger.info("PaymentSuccessView called")
+        billing_id = request.query_params.get('billing_id')
+        logger.info(f"Payment success for billing ID: {billing_id}")
+        
+        if not billing_id:
+            logger.warning("Missing billing ID in request")
+            return Response({"error": "Missing billing ID"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Use select_for_update to lock the row during update
+            with transaction.atomic():
+                billing = Billing.objects.select_for_update().get(id=billing_id)
+                logger.info(f"Found billing: {billing.id}, current status: {billing.payment_status}")
+                
+                # Update payment status only if it's not already paid
+                if billing.payment_status != 'PAID':
+                    billing.payment_status = 'PAID'
+                    billing.save(update_fields=['payment_status', 'updated_at'])
+                    logger.info(f"Updated billing {billing.id} status to PAID")
+                    
+                    # Also update the order status to FULFILLED
+                    order = billing.order
+                    if order.status == 'PENDING':
+                        order.status = 'FULFILLED'
+                        order.save(update_fields=['status', 'updated_at'])
+                        logger.info(f"Updated order {order.id} status to FULFILLED after payment")
+                        
+                        # Add audit log for order status change
+                        AuditLog.objects.create(
+                            action='UPDATE',
+                            model_name='Order',
+                            object_id=str(order.id),
+                            performed_by=request.user,
+                            details=f"Order status changed to FULFILLED after payment",
+                            ip_address=request.META.get('REMOTE_ADDR'),
+                            user_agent=request.META.get('HTTP_USER_AGENT')
+                        )
+                    
+                    # Create audit log for billing payment
+                    AuditLog.objects.create(
+                        action='UPDATE',
+                        model_name='Billing',
+                        object_id=str(billing.id),
+                        performed_by=request.user,
+                        details=f"Payment completed for billing {billing.id}",
+                        ip_address=request.META.get('REMOTE_ADDR'),
+                        user_agent=request.META.get('HTTP_USER_AGENT')
+                    )
+                    logger.info(f"Created audit log for billing {billing.id} payment")
+                else:
+                    logger.info(f"Billing {billing.id} already marked as PAID, no changes needed")
+            
+            # Query again outside the transaction to ensure we see the updated data
+            updated_billing = Billing.objects.get(id=billing_id)
+            logger.info(f"Confirmed updated status: {updated_billing.payment_status}")
+            
+            return Response({
+                "message": "Payment successful",
+                "billing_id": billing_id,
+                "payment_status": updated_billing.payment_status
+            })
+            
+        except Billing.DoesNotExist:
+            logger.error(f"Billing not found for ID: {billing_id}")
+            return Response({"error": "Billing not found"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.exception(f"Error processing successful payment: {str(e)}")
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class PaymentCancelView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request):
+        billing_id = request.query_params.get('billing_id')
+        if not billing_id:
+            return Response({"error": "Missing billing ID"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({
+            "message": "Payment was cancelled",
+            "billing_id": billing_id
+        })

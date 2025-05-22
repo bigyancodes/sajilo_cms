@@ -1,5 +1,5 @@
 import React, { useState, useContext } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { AuthContext } from "../../context/AuthContext";
 import PatientAppointments from "../../components/appointments/PatientAppointments";
 import PatientEHRDashboard from "../../components/ehr/PatientEHRDashboard";
@@ -34,6 +34,7 @@ const PatientDashboard = () => {
             <option value="medical-records">Medical Records</option>
             <option value="communication">Communication</option>
             <option value="ai-assistant">AI Assistant</option> {/* New section */}
+            <option value="pharmacy">Pharmacy</option> {/* New section */}
           </select>
         </div>
 
@@ -92,6 +93,20 @@ const PatientDashboard = () => {
                 onClick={() => setActiveSection("ai-assistant")}
               >
                 AI Assistant
+              </button>
+              {/* New tab for Pharmacy */}
+              <button
+                className={`
+                  whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm
+                  ${
+                    activeSection === "pharmacy"
+                      ? "border-blue-500 text-blue-600"
+                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                  }
+                `}
+                onClick={() => setActiveSection("pharmacy")}
+              >
+                Pharmacy
               </button>
             </nav>
           </div>
@@ -202,6 +217,8 @@ const PatientDashboard = () => {
         <PatientEHRDashboard />
       ) : activeSection === "communication" ? (
         <CommunicationList userRole="PATIENT" />
+      ) : activeSection === "pharmacy" ? (
+        <Navigate to="/patient/order-medicine" />
       ) : (
         // AI Assistant section
         <div className="bg-white shadow-md rounded-lg p-6">

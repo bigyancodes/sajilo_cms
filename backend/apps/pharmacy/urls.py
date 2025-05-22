@@ -5,7 +5,8 @@ from .views import (
     BillingListView, BillingDetailView,
     StockTransactionListCreateView, AddStockView,
     StockReportView, ExpiredMedicinesView, MostUsedMedicinesView,
-    AuditLogListView
+    AuditLogListView,
+    StripePaymentView, PaymentSuccessView, PaymentCancelView
 )
 
 app_name = "pharmacy"
@@ -24,4 +25,8 @@ urlpatterns = [
     path('reports/expired/', ExpiredMedicinesView.as_view(), name='expired-medicines'),
     path('reports/most-used/', MostUsedMedicinesView.as_view(), name='most-used-medicines'),
     path('audit-logs/', AuditLogListView.as_view(), name='audit-log-list'),
+    # Payment endpoints
+    path('billings/<int:billing_id>/payment/', StripePaymentView.as_view(), name='create-payment'),
+    path('payment/success/', PaymentSuccessView.as_view(), name='payment-success'),
+    path('payment/cancel/', PaymentCancelView.as_view(), name='payment-cancel'),
 ]

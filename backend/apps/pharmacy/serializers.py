@@ -13,7 +13,7 @@ class MedicineSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'generic_name', 'description', 'manufacturer',
             'manufacture_date', 'expiration_date', 'price', 'stock_quantity',
-            'low_stock_threshold', 'category', 'barcode', 'created_at', 'updated_at',
+            'low_stock_threshold', 'category', 'barcode', 'image', 'created_at', 'updated_at',
             'is_expired'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at', 'is_expired']

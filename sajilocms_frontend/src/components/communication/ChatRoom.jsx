@@ -47,7 +47,7 @@ const ChatRoom = () => {
       setError(null);
       
       // The token you provided
-      const TEST_TOKEN = "007eJxTYPh/dsL/BXlTzt/q/fxfs116DfuWo2qygeu3X2EzXvnmhcNOBQbDNGNjQ3NDS6NUA0MTy1TzJEszo0QTczMTyxQTSyNj4y+HWDIaAhkZnrYeZGJkgEAQn4Uh2Nk3mIEBADkVIbY=";
+      const TEST_TOKEN = "007eJxSYLji5rBv5b5Y9olnm92tOzp/+s/5PkkvSPM9h/HfaK5Jdz0UGAzTjI0NzQ0tjVINDE0sU82TLM2MEk3MzUwsU0wsjYyN98uoZXBwMDBopnkwMjIwMrAwMDKA+ExgkhlMskDJYGffYAgJCAAA//8woxyx";
       
       // Use a very simple channel name
       const TEST_CHANNEL = "SCMS";

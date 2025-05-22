@@ -22,7 +22,7 @@ env = environ.Env(DEBUG=(bool, False))
 BASE_DIR = Path(__file__).resolve().parent.parent
 environ.Env.read_env(BASE_DIR / ".env")  # Ensure .env is loaded
 
-# ✅ Security & Debug Settings
+# Security & Debug Settings
 SECRET_KEY =env("SECRET_KEY")
 DEBUG = env.bool("DEBUG", default=False)  # Prevent accidental exposure in production
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["127.0.0.1", "localhost"])
@@ -52,7 +52,6 @@ INSTALLED_APPS = [
 
     # Local Apps
     "apps.accounts",
-    "apps.appointment",
     "apps.ehr",
     "apps.communication",
     "apps.chatbot",
@@ -61,7 +60,7 @@ INSTALLED_APPS = [
 
 ]
 
-# ✅ Authentication Backends
+# Authentication Backends
 AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",
     "oauth2_provider.backends.OAuth2Backend",
@@ -125,7 +124,7 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 
-# ✅ REST Framework Configuration
+# REST Framework Configuration
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         'apps.accounts.authentication.CookieJWTAuthentication', 
@@ -144,7 +143,7 @@ REST_FRAMEWORK = {
     ),
 }
 
-# ✅ JWT Authentication Settings (Secure & Optimized)
+# JWT Authentication Settings (Secure & Optimized)
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(hours=1),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
@@ -160,25 +159,27 @@ SIMPLE_JWT = {
     "AUTH_COOKIE_SAMESITE": "None",
 }
 
-# ✅ CORS & CSRF Settings (Loaded from .env)
+# CORS & CSRF Settings (Loaded from .env)
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ])
 CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS  # ✅ Sync with CSRF trusted origins
+
+# Frontend URL setting removed
 CORS_ALLOW_CREDENTIALS = True  # ✅ Required for secure authentication
 
-# ✅ CSRF Configuration
+#  CSRF Configuration
 CSRF_COOKIE_SECURE = env.bool("CSRF_COOKIE_SECURE", default=not DEBUG)  # False in Dev, True in Prod
 CSRF_COOKIE_HTTP_ONLY = False # ✅ Ensures CSRF tokens are secure
 CSRF_COOKIE_SAMESITE = "Lax"  # ✅ Allows frontend requests
 CSRF_COOKIE_NAME = "csrftoken"
 
-# ✅ URL Redirects
+# URL Redirects
 LOGIN_REDIRECT_URL = "/dashboard/"
 SOCIAL_AUTH_REDIRECT_IS_HTTPS = env.bool("SOCIAL_AUTH_REDIRECT_IS_HTTPS", default=not DEBUG)
 
-# ✅ Static & Media File Handling
+# Static & Media File Handling
 STATIC_URL = "/static/"
 STATIC_ROOT = os.path.join(BASE_DIR, "static")
 MEDIA_URL = "/media/"
@@ -203,7 +204,9 @@ USE_TZ = True
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# ✅ Logging Configuration (Auto-Create Logs Directory)
+
+
+#  Logging Configuration (Auto-Create Logs Directory)
 LOGGING_DIR = os.path.join(BASE_DIR, "logs")
 if not os.path.exists(LOGGING_DIR):  # ✅ Prevents errors
     os.makedirs(LOGGING_DIR, exist_ok=True)
@@ -234,27 +237,24 @@ LOGGING = {
     },
 }
 
-# ✅ Custom User Model
+# Custom User Model
 AUTH_USER_MODEL = "accounts.CustomUser"
-
 
 # Agora Setup
 AGORA_APP_ID = env("AGORA_APP_ID")
-<<<<<<< HEAD
+
 AGORA_APP_CERTIFICATE = env("AGORA_APP_CERTIFICATE")
-=======
 AGORA_APP_CERTIFICATE = env("AGORA_APP_CERTIFICATE")
 
-
-
-# Email configuration for SendGrid SMTP Relay using environment variables
+# Email configuration
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.sendgrid.net'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = 'apikey'  # This is always 'apikey' for SendGrid SMTP
-EMAIL_HOST_PASSWORD = env('SENDGRID_API_KEY')  # Load API key from .env using env()
-DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL')
+EMAIL_HOST_PASSWORD = env('SENDGRID_API_KEY', default='')
+DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='sajiloclinicmanagementsystem@gmail.com')
+
 
 # Stripe Settings
 STRIPE_PUBLIC_KEY = env('STRIPE_PUBLIC_KEY')

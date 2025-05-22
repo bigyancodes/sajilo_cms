@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+{% load pharmacy_filters %}
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Invoice #{{ billing.id }}</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1, h2 { color: #1976d2; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background: #1976d2; color: #fff; }
+        .header { text-align: center; margin-bottom: 20px; }
+        .footer { margin-top: 30px; text-align: center; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Sajilo CMS Pharmacy</h1>
+        <h2>Invoice #{{ billing.id }}</h2>
+    </div>
+    
+    <p><strong>Patient:</strong> {{ billing.order.patient.first_name }} {{ billing.order.patient.last_name }}</p>
+    <p><strong>Order ID:</strong> {{ billing.order.id }}</p>
+    <p><strong>Status:</strong> {{ billing.payment_status }}</p>
+    <p><strong>Date:</strong> {{ billing.created_at|date:"F d, Y" }}</p>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Medicine</th>
+                <th>Quantity</th>
+                <th>Price</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for item in order_medicines %}
+            <tr>
+                <td>{{ item.medicine.name }}</td>
+                <td>{{ item.quantity }}</td>
+                <td>${{ item.medicine.price }}</td>
+                <td>${{ item.quantity|multiply:item.medicine.price }}</td>
+            </tr>
+        {% empty %}
+            <tr>
+                <td colspan="4" style="text-align: center;">No medicines found</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="3" style="text-align: right;"><strong>Total:</strong></td>
+                <td><strong>${{ billing.total_amount }}</strong></td>
+            </tr>
+        </tfoot>
+    </table>
+    
+    <div class="footer">
+        <p>Thank you for your business!</p>
+        <p>If you have any questions, please contact us at pharmacy@sajilocms.com</p>
+    </div>
+</body>
+</html>

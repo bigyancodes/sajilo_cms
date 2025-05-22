@@ -1,16 +1,12 @@
 // src/components/appointments/ReceptionistAppointmentManager.jsx
-import React, { useState, useEffect, useCallback, useContext, useRef } from 'react';
+import React, { useState, useEffect, useContext, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { AuthContext } from '../../context/AuthContext';
-import { 
-  fetchAdminAppointments, 
-  cancelAppointment, 
-  confirmAppointment,
-  fetchAvailableSlots 
-} from '../../api/appointmentService';
-import { fetchAllDoctors } from '../../api/axiosInstance';
-import { format, parseISO, startOfDay, endOfDay, addDays } from 'date-fns';
+import { format, startOfDay, endOfDay, addDays } from 'date-fns';
+import { fetchReceptionistAppointments, cancelAppointment, confirmAppointment, updateAppointment } from '../../api/appointmentService';
+import { fetchAllDoctors } from '../../api/doctorService';
+import { AuthContext } from '../../contexts/AuthContext';
 import AppointmentCard from './AppointmentCard';
+import AppointmentEditModal from './AppointmentEditModal';
 
 const ReceptionistAppointmentManager = () => {
   const { refreshToken } = useContext(AuthContext);
@@ -32,7 +28,7 @@ const ReceptionistAppointmentManager = () => {
     };
   }, []);
   
-  // Load doctors once on mount
+  // Load doctors and appointments when component mounts
   useEffect(() => {
     const loadDoctors = async () => {
       try {
@@ -46,6 +42,7 @@ const ReceptionistAppointmentManager = () => {
     };
     
     loadDoctors();
+    loadAppointments();
     // We only want to run this once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -84,12 +81,25 @@ const ReceptionistAppointmentManager = () => {
       }
       
       console.log('Fetching appointments with filters:', filters);
+      console.log('Active tab:', activeTab);
       
-      const response = await fetchAdminAppointments(filters);
+      const response = await fetchReceptionistAppointments(filters);
       
       // Only update state if still mounted
       if (isMounted.current) {
         console.log('Appointment response:', response.data);
+        console.log('Response data length:', response.data.length);
+        
+        // Check if we have any appointments
+        if (response.data.length === 0) {
+          console.log('No appointments found in the response');
+        } else {
+          console.log('First appointment details:', JSON.stringify(response.data[0], null, 2));
+          // Log the doctor and patient objects specifically to see their structure
+          console.log('Doctor object:', response.data[0].doctor);
+          console.log('Patient object:', response.data[0].patient);
+        }
+        
         setAppointments(response.data);
         setRetryCount(0);
       }
@@ -181,9 +191,55 @@ const ReceptionistAppointmentManager = () => {
       setActionInProgress(null);
     }
   };
-  
+
+  const [editingAppointment, setEditingAppointment] = useState(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+
+  const handleEditAppointment = (appointment) => {
+    setEditingAppointment(appointment);
+    setShowEditModal(true);
+  };
+
+  const handleUpdateAppointment = async (updatedData) => {
+    try {
+      setActionInProgress(editingAppointment.id);
+      await updateAppointment(editingAppointment.id, updatedData);
+      
+      // Update the list to reflect the changes
+      setAppointments(prev => 
+        prev.map(appointment => 
+          appointment.id === editingAppointment.id 
+            ? { ...appointment, ...updatedData } 
+            : appointment
+        )
+      );
+      
+      setShowEditModal(false);
+      setEditingAppointment(null);
+      
+    } catch (err) {
+      console.error('Failed to update appointment:', err);
+      setError('Failed to update appointment. Please try again.');
+    } finally {
+      setActionInProgress(null);
+    }
+  };
+
   return (
-    <div className="px-4 py-6">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {showEditModal && editingAppointment && (
+        <AppointmentEditModal
+          appointment={editingAppointment}
+          doctors={doctors}
+          onUpdate={handleUpdateAppointment}
+          onCancel={() => {
+            setShowEditModal(false);
+            setEditingAppointment(null);
+          }}
+          isUpdating={actionInProgress === editingAppointment.id}
+        />
+      )}
+      
       <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-gray-900 mb-2 sm:mb-0">
           Appointment Management
@@ -191,7 +247,7 @@ const ReceptionistAppointmentManager = () => {
         
         <Link 
           to="/book-appointment" 
-          className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+          className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
         >
           <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -201,7 +257,7 @@ const ReceptionistAppointmentManager = () => {
       </div>
       
       {/* Quick Actions */}
-      <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="mb-6 grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-lg shadow-md p-4 border-l-4 border-blue-500">
           <h2 className="text-lg font-medium text-gray-900">Quick Actions</h2>
           <div className="mt-4 flex flex-col space-y-2">
@@ -224,11 +280,7 @@ const ReceptionistAppointmentManager = () => {
               Schedule Appointment
             </Link>
             <button 
-              onClick={() => {
-                // Manual refresh - reset retry count and explicitly load
-                setRetryCount(0);
-                loadAppointments();
-              }} 
+              onClick={loadAppointments}
               className="text-blue-600 hover:text-blue-800 flex items-center"
             >
               <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -239,10 +291,24 @@ const ReceptionistAppointmentManager = () => {
           </div>
         </div>
         
+        {/* Doctor Cards */}
         {doctors.slice(0, 3).map(doctor => (
           <DoctorAvailabilityCard key={doctor.id} doctor={doctor} />
         ))}
       </div>
+      
+      {/* Error Message */}
+      {error && (
+        <div className="mb-4 p-3 bg-red-50 border-l-4 border-red-500 text-red-700">
+          {error}
+          <button 
+            className="ml-2 text-red-800 underline" 
+            onClick={() => setError('')}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
       
       {/* Tabs */}
       <div className="mb-4 border-b border-gray-200">
@@ -280,25 +346,22 @@ const ReceptionistAppointmentManager = () => {
         </nav>
       </div>
       
-      {/* Error Message */}
-      {error && (
-        <div className="mb-4 p-3 bg-red-50 border-l-4 border-red-500 text-red-700">
-          {error}
-          <button 
-            className="ml-2 text-red-800 underline" 
-            onClick={() => setError('')}
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
-      
       {/* Appointments */}
       <div className="bg-white shadow-md rounded-lg overflow-hidden">
         {loading ? (
-          <div className="p-8 text-center">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
-            <p className="mt-2 text-gray-600">Loading appointments...</p>
+          <div className="flex justify-center items-center p-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+            <span className="ml-2 text-gray-600">Loading appointments...</span>
+          </div>
+        ) : error ? (
+          <div className="p-6 text-center">
+            <div className="text-red-500 mb-4">{error}</div>
+            <button 
+              onClick={loadAppointments}
+              className="px-4 py-2 bg-blue-100 text-blue-600 rounded-md hover:bg-blue-200"
+            >
+              Try Again
+            </button>
           </div>
         ) : appointments.length === 0 ? (
           <div className="p-8 text-center">
@@ -315,33 +378,55 @@ const ReceptionistAppointmentManager = () => {
                 ? "There are no upcoming appointments scheduled." 
                 : "There are no pending appointments that need confirmation."}
             </p>
-            <Link 
-              to="/book-appointment" 
-              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-            >
-              Schedule New Appointment
-            </Link>
+            <div className="flex justify-center space-x-4">
+              <button
+                onClick={loadAppointments}
+                className="px-4 py-2 bg-blue-100 text-blue-600 rounded-md hover:bg-blue-200"
+              >
+                Refresh
+              </button>
+              <button
+                onClick={() => setActiveTab('upcoming')}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              >
+                Schedule New Appointment
+              </button>
+            </div>
           </div>
         ) : (
-          <div className="divide-y divide-gray-200">
-            {appointments.map(appointment => (
-              <AppointmentCard
-                key={appointment.id}
-                appointment={appointment}
-                onCancel={
-                  appointment.can_modify && appointment.status !== 'CANCELLED' 
-                    ? () => handleCancelAppointment(appointment.id) 
-                    : null
-                }
-                onConfirm={
-                  appointment.status === 'PENDING' 
-                    ? () => handleConfirmAppointment(appointment.id) 
-                    : null
-                }
-                isCancelling={actionInProgress === appointment.id}
-                isConfirming={actionInProgress === appointment.id}
-              />
-            ))}
+          <div>
+            <div className="p-4 bg-blue-50 border-b border-blue-100">
+              <h3 className="text-lg font-medium text-blue-800">Found {appointments.length} appointments</h3>
+            </div>
+            <div className="grid grid-cols-1 gap-4 p-4">
+              {appointments.map(appointment => {
+                // No need to create enhanced appointment, we'll handle it in the AppointmentCard
+                return (
+                  <AppointmentCard
+                    key={appointment.id}
+                    appointment={appointment}
+                    onCancel={
+                      appointment.can_modify && appointment.status !== 'CANCELLED' 
+                        ? () => handleCancelAppointment(appointment.id) 
+                        : null
+                    }
+                    onConfirm={
+                      appointment.status === 'PENDING' 
+                        ? () => handleConfirmAppointment(appointment.id) 
+                        : null
+                    }
+                    onEdit={
+                      ['PENDING', 'CONFIRMED'].includes(appointment.status)
+                        ? () => handleEditAppointment(appointment)
+                        : null
+                    }
+                    isCancelling={actionInProgress === appointment.id}
+                    isConfirming={actionInProgress === appointment.id}
+                    isEditing={actionInProgress === appointment.id}
+                  />
+                );
+              })}
+            </div>
           </div>
         )}
       </div>

@@ -5,6 +5,7 @@ import {
   updateMedicalRecord, 
   fetchPatientMedicalHistory
 } from "../../api/ehrService";
+import { rootAxiosInstance } from "../../api/axiosInstance";
 import PrescriptionsSection from "./PrescriptionsSection";
 
 const MedicalRecordForm = ({ 
@@ -22,8 +23,14 @@ const MedicalRecordForm = ({
     treatment_plan: record?.treatment_plan || "",
     notes: record?.notes || "",
     prescriptions: record?.prescriptions || [],
-    previous_record_id: record?.previous_record?.id || record?.previous_record || null
+    previous_record_id: record?.previous_record?.id || record?.previous_record || null,
+    status: record?.status || "PROCESSING"
   });
+  
+  const [markAsComplete, setMarkAsComplete] = useState(false);
+  
+  // Log the appointment ID for debugging
+  console.log("Appointment ID in form:", appointmentId);
   
   const [previousRecords, setPreviousRecords] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -81,20 +88,75 @@ const MedicalRecordForm = ({
       setLoading(true);
       setError("");
       setSuccess("");
-      console.log("Submitting formData:", formData);
+      
+      // Get the appointment ID
+      const effectiveAppointmentId = appointmentId || (record?.appointment?.id || record?.appointment);
+      console.log("Effective appointment ID:", effectiveAppointmentId);
+      
+      if (!effectiveAppointmentId) {
+        setError("No appointment ID found. Cannot create medical record.");
+        return;
+      }
+      
+      // Prepare the medical record data
+      const recordData = {
+        appointment: effectiveAppointmentId,
+        chief_complaint: formData.chief_complaint || "",
+        observations: formData.observations || "",
+        diagnosis: formData.diagnosis || "",
+        treatment_plan: formData.treatment_plan || "",
+        notes: formData.notes || "",
+        prescriptions: formData.prescriptions || [],
+        status: markAsComplete ? "COMPLETED" : "PROCESSING"
+      };
+      
+      if (formData.previous_record_id) {
+        recordData.previous_record_id = formData.previous_record_id;
+      }
+      
+      console.log("Submitting record data:", recordData);
       let response;
+      
       if (record?.id) {
-        response = await updateMedicalRecord(record.id, formData);
+        // For updates, use the regular update endpoint
+        response = await updateMedicalRecord(record.id, recordData);
         setSuccess("Medical record updated successfully");
       } else {
-        response = await createMedicalRecord(formData);
+        // For new records, use the standard create endpoint
+        response = await createMedicalRecord(recordData);
         setSuccess("Medical record created successfully");
       }
+      
+      // If checkbox is checked, mark the appointment as complete in a separate call
+      if (markAsComplete) {
+        try {
+          const completeResponse = await rootAxiosInstance.post(
+            `/appointment/appointments/${effectiveAppointmentId}/complete/`
+          );
+          console.log("Appointment marked as complete:", completeResponse.data);
+        } catch (completeErr) {
+          console.error("Error marking appointment as complete:", completeErr);
+          // Don't fail the whole operation if this fails
+        }
+      }
+      
       onSave(response.data);
     } catch (err) {
       console.error("Failed to save medical record:", err);
       console.log("Error response:", err.response?.data);
-      setError(err.response?.data?.error || err.response?.data?.appointment || "Failed to save the medical record. Please try again.");
+      
+      // Provide a more user-friendly error message
+      let errorMessage = "Failed to save the medical record. Please try again.";
+      
+      if (err.response?.data) {
+        if (err.response.data.appointment) {
+          errorMessage = "There was an issue with the appointment. It may already have a medical record.";
+        } else if (err.response.data.error) {
+          errorMessage = err.response.data.error;
+        }
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -267,6 +329,45 @@ const MedicalRecordForm = ({
             value={formData.notes}
             onChange={handleChange}
           />
+        </div>
+        
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Record Status
+          </label>
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center">
+              <input
+                id="statusProcessing"
+                name="recordStatus"
+                type="radio"
+                checked={!markAsComplete}
+                onChange={() => setMarkAsComplete(false)}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+              />
+              <label htmlFor="statusProcessing" className="ml-2 block text-sm text-gray-700">
+                Processing (In Progress)
+              </label>
+            </div>
+            <div className="flex items-center">
+              <input
+                id="statusCompleted"
+                name="recordStatus"
+                type="radio"
+                checked={markAsComplete}
+                onChange={() => setMarkAsComplete(true)}
+                className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300"
+              />
+              <label htmlFor="statusCompleted" className="ml-2 block text-sm text-gray-700">
+                Completed
+              </label>
+            </div>
+          </div>
+          <p className="mt-1 text-sm text-gray-500">
+            {markAsComplete ? 
+              "This will mark the record as completed and the appointment as complete." : 
+              "This will save the record as in-progress, allowing further edits."}
+          </p>
         </div>
         
         <div className="flex justify-end space-x-3">

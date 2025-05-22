@@ -1,5 +1,11 @@
 from django.conf import settings
 import logging
+from django.core.mail import send_mail
+from django.template.loader import render_to_string
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
+import six
 
 logger = logging.getLogger(__name__)
 
@@ -60,3 +66,15 @@ def set_auth_cookies(response, access_token, refresh_token):
     logger.info("Auth cookies set successfully")
     
     return response
+
+
+class TokenGenerator(PasswordResetTokenGenerator):
+    """Custom token generator for password reset"""
+    def _make_hash_value(self, user, timestamp):
+        return (
+            six.text_type(user.pk) + six.text_type(timestamp) +
+            six.text_type(user.is_active)
+        )
+
+
+account_activation_token = TokenGenerator()

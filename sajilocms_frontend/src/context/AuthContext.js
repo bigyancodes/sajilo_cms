@@ -1,5 +1,5 @@
-// src/context/AuthContext.js
 import React, { createContext, useState, useEffect, useCallback } from "react";
+import { useLocation } from "react-router-dom";
 import axiosInstance, { fetchCSRFToken, silentTokenRefresh } from "../api/axiosInstance";
 
 export const AuthContext = createContext();
@@ -9,14 +9,13 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [authInitialized, setAuthInitialized] = useState(false);
   const [authError, setAuthError] = useState(null);
+  const location = useLocation();
 
   // Clear user session and localStorage
   const clearUserSession = useCallback(() => {
     setUser(null);
     localStorage.removeItem('userData');
     localStorage.removeItem('lastTokenRefresh');
-    
-    // Log result
     console.log("User session cleared");
   }, []);
 
@@ -24,18 +23,13 @@ export const AuthProvider = ({ children }) => {
   const logout = useCallback(async (redirect = true) => {
     try {
       console.log("Logging out user...");
-      
-      // Attempt to blacklist the token
       try {
         await axiosInstance.post("/logout/");
         console.log("Logout endpoint success");
       } catch (error) {
         console.error("Logout endpoint failed:", error);
       }
-      
-      // Always clear session regardless of API success
       clearUserSession();
-
       if (redirect) {
         console.log("Redirecting to login page");
         window.location.href = "/login";
@@ -49,16 +43,13 @@ export const AuthProvider = ({ children }) => {
     }
   }, [clearUserSession]);
 
-  // Refresh token if needed - don't check for cookie directly
+  // Refresh token if needed
   const refreshTokenIfNeeded = useCallback(async () => {
     try {
-      // Try to refresh the token
       const { success, data } = await silentTokenRefresh();
-      
       if (success && data?.user) {
         setUser(data.user);
       }
-      
       return success;
     } catch (error) {
       console.error("🔴 Token refresh failed:", error);
@@ -70,29 +61,20 @@ export const AuthProvider = ({ children }) => {
   const fetchUserProfile = useCallback(async (skipRefresh = false) => {
     try {
       setLoading(true);
-
-      // Try to fetch user profile
       try {
-        // Add cache-busting parameter to prevent caching
         const timestamp = new Date().getTime();
         const res = await axiosInstance.get(`/profile/?_=${timestamp}`);
-        
-        // Store user data in state and localStorage
         setUser(res.data);
         localStorage.setItem('userData', JSON.stringify(res.data));
-        
         console.log("✅ User profile fetched successfully:", res.data);
         return true;
       } catch (error) {
-        // If we get a 401/403 and haven't tried refreshing yet
         if (!skipRefresh && (error.response?.status === 401 || error.response?.status === 403)) {
           console.log("🔄 Token expired, attempting refresh...");
           const refreshSuccess = await refreshTokenIfNeeded();
-          
           if (refreshSuccess) {
-            // Try fetching the profile again after successful refresh
             console.log("🔄 Retrying profile fetch after token refresh");
-            return fetchUserProfile(true); // Skip refresh on retry to prevent loops
+            return fetchUserProfile(true);
           } else {
             console.error("🔴 Token refresh failed, cannot fetch profile");
             setUser(null);
@@ -118,22 +100,12 @@ export const AuthProvider = ({ children }) => {
 
   // Email/Password Login
   const login = async (email, password) => {
-    // Ensure CSRF token is loaded
     await fetchCSRFToken();
-
     try {
-      // Make login request
       const res = await axiosInstance.post("/login/", { email, password });
-      
-      // Log success
       console.log("✅ Login successful:", res.data);
-      
-      // Set user state immediately for UI responsiveness
       setUser(res.data);
-      
-      // Store user data in localStorage
       localStorage.setItem('userData', JSON.stringify(res.data));
-      
       return { 
         success: true, 
         message: res.data.message || "Login successful", 
@@ -150,22 +122,12 @@ export const AuthProvider = ({ children }) => {
 
   // Google SSO Login
   const googleLogin = async (idToken) => {
-    // Ensure CSRF token is loaded
     await fetchCSRFToken();
-
     try {
-      // Make Google login request
       const res = await axiosInstance.post("/login/google/", { id_token: idToken });
-      
-      // Log success
       console.log("✅ Google login successful:", res.data);
-      
-      // Set user state
       setUser(res.data);
-      
-      // Store user data in localStorage
       localStorage.setItem('userData', JSON.stringify(res.data));
-      
       return { 
         success: true, 
         message: res.data.message || "Login successful", 
@@ -182,13 +144,10 @@ export const AuthProvider = ({ children }) => {
 
   // Patient Registration
   const register = async (data) => {
-    // Ensure CSRF token is loaded
     await fetchCSRFToken();
-
     if (data.password !== data.confirm_password) {
       return { success: false, message: "Passwords do not match" };
     }
-
     try {
       const res = await axiosInstance.post("/register/", data);
       return { success: true, message: res.data.message || "Registration successful" };
@@ -203,14 +162,33 @@ export const AuthProvider = ({ children }) => {
 
   // Initialize authentication state
   const initializeAuth = useCallback(async () => {
+    // Define public routes that don't require authentication
+    const publicRoutes = [
+      "/login",
+      "/register",
+      "/forgot-password",
+      "/reset-password",
+      "/unauthorized",
+      "/doctors",
+      "/payment-success",
+      "/payment-cancel",
+    ];
+
+    const isResetPasswordRoute = location.pathname.startsWith("/reset-password");
+    const isPublicRoute = publicRoutes.some(route => location.pathname.startsWith(route)) || isResetPasswordRoute;
+
+    if (isPublicRoute) {
+      console.log("On a public route, skipping authentication check:", location.pathname);
+      setLoading(false);
+      setAuthInitialized(true);
+      return;
+    }
+
     setLoading(true);
     setAuthError(null);
     
     try {
-      // First load CSRF token
       await fetchCSRFToken();
-      
-      // Check for existing user data in localStorage
       const savedUserData = localStorage.getItem('userData');
       if (savedUserData) {
         try {
@@ -222,11 +200,8 @@ export const AuthProvider = ({ children }) => {
           localStorage.removeItem('userData');
         }
       }
-      
-      // Try to refresh token and fetch the latest user profile
-      // This will update our state if successful
       await refreshTokenIfNeeded();
-      await fetchUserProfile(true); // Skip another refresh since we just tried
+      await fetchUserProfile(true);
     } catch (err) {
       console.error("Auth initialization error:", err);
       setAuthError(err.message || "Failed to initialize authentication");
@@ -236,17 +211,16 @@ export const AuthProvider = ({ children }) => {
       setLoading(false);
       setAuthInitialized(true);
     }
-  }, [fetchUserProfile, refreshTokenIfNeeded]);
+  }, [fetchUserProfile, refreshTokenIfNeeded, location]);
 
   // Load Auth on App Start
   useEffect(() => {
     console.log("🚀 AuthProvider initializing...");
     initializeAuth();
     
-    // Set up a refresh interval (every 50 minutes)
     const refreshInterval = setInterval(() => {
       refreshTokenIfNeeded();
-    }, 50 * 60 * 1000); // 50 minutes
+    }, 50 * 60 * 1000);
     
     return () => {
       clearInterval(refreshInterval);

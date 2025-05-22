@@ -1,9 +1,10 @@
-// src/pages/auth/LoginPage.js
 import React, { useState, useContext, useEffect, useCallback } from "react";
 import { AuthContext } from "../../context/AuthContext";
 import { useNavigate, Link } from "react-router-dom";
 import { GoogleOAuthProvider, GoogleLogin } from "@react-oauth/google";
 import { fetchCSRFToken } from "../../api/axiosInstance";
+// Import React Icons for password visibility toggle
+import { FaEye, FaEyeSlash } from 'react-icons/fa';
 
 // Use your Google Client ID here
 const CLIENT_ID = "482794007286-e5a51mvbrkou320jsqbpn4innjfd6idq.apps.googleusercontent.com";
@@ -18,6 +19,7 @@ function LoginPage() {
   const [errorMsg, setErrorMsg] = useState("");
   const [loading, setLoading] = useState(false);
   const [csrfTokenLoaded, setCsrfTokenLoaded] = useState(false);
+  const [showPassword, setShowPassword] = useState(false); // State to toggle password visibility
 
   // Memoize redirectBasedOnRole to use it in useEffect
   const redirectBasedOnRole = useCallback((role) => {
@@ -38,14 +40,26 @@ function LoginPage() {
       default:
         navigate("/patient", { replace: true });
     }
-  }, [navigate]); // Only depends on navigate
+  }, [navigate]);
+
+  // Check for reset password parameters in URL
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const searchParams = new URLSearchParams(url.search);
+    const resetToken = searchParams.get('token');
+    const resetUid = searchParams.get('uid');
+    
+    if (resetToken && resetUid) {
+      navigate(`/reset-password/${resetUid}/${resetToken}`);
+    }
+  }, [navigate]);
 
   // Redirect if already logged in
   useEffect(() => {
     if (authInitialized && user) {
       redirectBasedOnRole(user.role);
     }
-  }, [user, authInitialized, redirectBasedOnRole]); // Added redirectBasedOnRole as dependency
+  }, [user, authInitialized, redirectBasedOnRole]);
 
   // Fetch CSRF token on mount
   useEffect(() => {
@@ -160,17 +174,26 @@ function LoginPage() {
                   <label htmlFor="password" className="block text-sm font-medium text-gray-700">
                     Password
                   </label>
-                  <input
-                    id="password"
-                    name="password"
-                    type="password"
-                    autoComplete="current-password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    disabled={loading}
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
-                  />
+                  <div className="relative">
+                    <input
+                      id="password"
+                      name="password"
+                      type={showPassword ? "text" : "password"}
+                      autoComplete="current-password"
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      disabled={loading}
+                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700"
+                    >
+                      {showPassword ? <FaEyeSlash /> : <FaEye />}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between">
@@ -186,6 +209,11 @@ function LoginPage() {
                     <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700">
                       Remember me
                     </label>
+                  </div>
+                  <div className="text-sm">
+                    <Link to="/forgot-password" className="font-medium text-blue-600 hover:text-blue-500">
+                      Forgot your password?
+                    </Link>
                   </div>
                 </div>
 

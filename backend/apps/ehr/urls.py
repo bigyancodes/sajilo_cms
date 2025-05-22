@@ -19,4 +19,7 @@ urlpatterns = [
     
     # New endpoint for patient medical history
     path('patient-history/<str:patient_id>/', views.PatientMedicalHistoryView.as_view(), name='patient-medical-history'),
+    
+    # New endpoint for creating a medical record and marking appointment as complete
+    path('create-with-appointment/', views.CreateMedicalRecordWithAppointmentView.as_view(), name='create-with-appointment'),
 ]

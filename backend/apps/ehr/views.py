@@ -14,7 +14,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 
-from .models import MedicalRecord, MedicalAttachment, Prescription, MedicalRecordAudit
+from .models import MedicalRecord, MedicalAttachment, Prescription, MedicalRecordAudit, MedicalRecordStatus
 from .serializers import (
     MedicalRecordSerializer, 
     MedicalAttachmentSerializer,
@@ -298,6 +298,74 @@ class MedicalRecordViewSet(viewsets.ModelViewSet):
         
         return response
 
+    # Mark a medical record as completed
+    @action(detail=True, methods=['post'])
+    def mark_completed(self, request, pk=None):
+        """Mark a medical record as completed"""
+        record = self.get_object()
+        
+        # Check if user is authorized to mark this record as completed
+        if request.user.role == UserRoles.DOCTOR and record.appointment.doctor != request.user:
+            return Response({
+                "detail": "You can only mark your own medical records as completed"
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        if record.status == MedicalRecordStatus.COMPLETED:
+            return Response({
+                "detail": "This medical record is already marked as completed"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        record.mark_as_completed()
+        
+        # Create audit log
+        MedicalRecordAudit.objects.create(
+            medical_record=record,
+            action='UPDATE',
+            field_modified='status',
+            old_value=MedicalRecordStatus.PROCESSING,
+            new_value=MedicalRecordStatus.COMPLETED,
+            performed_by=request.user,
+            ip_address=request.META.get('REMOTE_ADDR', ''),
+            user_agent=request.META.get('HTTP_USER_AGENT', '')
+        )
+        
+        serializer = self.get_serializer(record)
+        return Response(serializer.data)
+    
+    # Mark a medical record as processing
+    @action(detail=True, methods=['post'])
+    def mark_processing(self, request, pk=None):
+        """Mark a medical record as processing (in progress)"""
+        record = self.get_object()
+        
+        # Check if user is authorized to mark this record as processing
+        if request.user.role == UserRoles.DOCTOR and record.appointment.doctor != request.user:
+            return Response({
+                "detail": "You can only mark your own medical records as processing"
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        if record.status == MedicalRecordStatus.PROCESSING:
+            return Response({
+                "detail": "This medical record is already marked as processing"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        record.mark_as_processing()
+        
+        # Create audit log
+        MedicalRecordAudit.objects.create(
+            medical_record=record,
+            action='UPDATE',
+            field_modified='status',
+            old_value=MedicalRecordStatus.COMPLETED,
+            new_value=MedicalRecordStatus.PROCESSING,
+            performed_by=request.user,
+            ip_address=request.META.get('REMOTE_ADDR', ''),
+            user_agent=request.META.get('HTTP_USER_AGENT', '')
+        )
+        
+        serializer = self.get_serializer(record)
+        return Response(serializer.data)
+
 class GetOrCreateMedicalRecordView(generics.GenericAPIView):
     """API to get or create a medical record for a specific appointment"""
     serializer_class = MedicalRecordSerializer
@@ -490,3 +558,95 @@ class PatientMedicalHistoryView(generics.ListAPIView):
             ).order_by('-created_at')
             
         return MedicalRecord.objects.none()
+
+
+class CreateMedicalRecordWithAppointmentView(generics.CreateAPIView):
+    """Create a medical record and optionally mark the appointment as complete"""
+    serializer_class = MedicalRecordSerializer
+    permission_classes = [permissions.IsAuthenticated, IsVerified]
+    
+    def create(self, request, *args, **kwargs):
+        # Log the entire request data for debugging
+        logger.info(f"CreateMedicalRecordWithAppointmentView received data: {request.data}")
+        
+        # Extract appointment_id and mark_complete from request data
+        appointment_id = request.data.get('appointment_id')
+        mark_complete = request.data.get('mark_complete', False)
+        
+        logger.info(f"Extracted appointment_id: {appointment_id}, mark_complete: {mark_complete}")
+        
+        if not appointment_id:
+            return Response(
+                {"error": "appointment_id is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get the appointment
+        try:
+            appointment = Appointment.objects.get(id=appointment_id)
+        except Appointment.DoesNotExist:
+            return Response(
+                {"error": "Appointment not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Check if user is the doctor for this appointment
+        if request.user.role == UserRoles.DOCTOR and appointment.doctor != request.user:
+            return Response(
+                {"error": "You can only create medical records for your own appointments"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Check if medical record already exists
+        if hasattr(appointment, 'medical_record'):
+            return Response(
+                {"error": "Medical record already exists for this appointment"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if appointment status is valid
+        if appointment.status not in [AppointmentStatus.CONFIRMED, AppointmentStatus.COMPLETED]:
+            return Response(
+                {"error": "Medical records can only be created for confirmed or completed appointments"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Prepare data for medical record creation
+        record_data = request.data.copy()
+        record_data.pop('appointment_id', None)  # Remove appointment_id from data
+        record_data.pop('mark_complete', None)   # Remove mark_complete from data
+        
+        # Create the medical record
+        serializer = self.get_serializer(data=record_data)
+        
+        # Log validation errors if any
+        if not serializer.is_valid():
+            logger.error(f"Serializer validation errors: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+        record = serializer.save(
+            appointment=appointment,
+            created_by=request.user
+        )
+        
+        # Set the current user and request for audit signals
+        record._current_user = request.user
+        record._current_request = request
+        record.save()
+        
+        # Create audit log
+        MedicalRecordAudit.objects.create(
+            medical_record=record,
+            action='CREATE',
+            performed_by=request.user,
+            ip_address=request.META.get('REMOTE_ADDR', ''),
+            user_agent=request.META.get('HTTP_USER_AGENT', '')
+        )
+        
+        # Mark appointment as complete if requested
+        if mark_complete and appointment.status == AppointmentStatus.CONFIRMED:
+            appointment.mark_completed()
+            logger.info(f"Appointment {appointment.id} marked as completed during medical record creation")
+        
+        # Return the created record
+        return Response(serializer.data, status=status.HTTP_201_CREATED)

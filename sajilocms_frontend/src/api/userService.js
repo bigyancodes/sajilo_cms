@@ -75,7 +75,9 @@ export const userService = {
         error: error.response?.data?.error || 'Failed to update profile photo'
       };
     }
-  }
+  },
+
+  // Reset password functionality has been removed
 };
 
 export default userService; 

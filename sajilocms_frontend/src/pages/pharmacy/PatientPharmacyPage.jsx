@@ -1,57 +1,53 @@
-import React, { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
-import {
-  Box,
-  Container,
-  Tabs,
-  Tab,
-  Paper,
+// src/pages/pharmacy/PatientPharmacyPage.jsx
+import React, { useState } from 'react';
+import { 
+  Box, Typography, Paper, Tabs, Tab, Divider
 } from '@mui/material';
 import MedicineList from '../../components/pharmacy/MedicineList';
-import OrderHistory from '../../components/pharmacy/OrderHistory';
-import { useDocumentTitle } from '../../utils/hooks';
+import Cart from '../../components/pharmacy/Cart';
+import OrderList from '../../components/pharmacy/OrderList';
+import MedicationIcon from '@mui/icons-material/Medication';
+import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
+import ReceiptIcon from '@mui/icons-material/Receipt';
 
 const PatientPharmacyPage = () => {
-  const location = useLocation();
-  const [activeTab, setActiveTab] = useState(() => {
-    // Check if we have an activeTab in the location state (e.g., from redirect)
-    return location.state?.activeTab || 0;
-  });
+  const [activeTab, setActiveTab] = useState(0);
   
-  useDocumentTitle('Pharmacy - Sajilo CMS');
-
-  // Update activeTab if location state changes
-  useEffect(() => {
-    if (location.state?.activeTab !== undefined) {
-      setActiveTab(location.state.activeTab);
-    }
-  }, [location.state]);
-
   const handleTabChange = (event, newValue) => {
     setActiveTab(newValue);
   };
-
+  
   return (
-    <Container maxWidth="lg">
-      <Box py={4}>
-        <Paper sx={{ mb: 3 }}>
-          <Tabs
-            value={activeTab}
-            onChange={handleTabChange}
-            indicatorColor="primary"
-            textColor="primary"
-            centered
-          >
-            <Tab label="Browse Medicines" />
-            <Tab label="Order History" />
-          </Tabs>
-        </Paper>
-
-        {activeTab === 0 && <MedicineList />}
-        {activeTab === 1 && <OrderHistory />}
+    <Box className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <Box sx={{ mb: 2 }}>
+        <Typography variant="h4" component="h1" gutterBottom>
+          Pharmacy
+        </Typography>
       </Box>
-    </Container>
+      
+      <Paper sx={{ mt: 3 }}>
+        <Tabs 
+          value={activeTab} 
+          onChange={handleTabChange}
+          variant="fullWidth"
+          indicatorColor="primary"
+          textColor="primary"
+        >
+          <Tab icon={<MedicationIcon />} label="Browse Medicines" />
+          <Tab icon={<ShoppingCartIcon />} label="My Cart" />
+          <Tab icon={<ReceiptIcon />} label="My Orders" />
+        </Tabs>
+        
+        <Divider />
+        
+        <Box p={3}>
+          {activeTab === 0 && <MedicineList userRole="PATIENT" />}
+          {activeTab === 1 && <Cart />}
+          {activeTab === 2 && <OrderList />}
+        </Box>
+      </Paper>
+    </Box>
   );
 };
 
-export default PatientPharmacyPage; 
+export default PatientPharmacyPage;

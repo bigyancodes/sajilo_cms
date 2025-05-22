@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContext';
 import { fetchDoctorById } from '../../api/axiosInstance';
 import { fetchAvailableSlots, createAppointment } from '../../api/appointmentService';
+import { fetchDoctorPricing } from '../../api/billingService';
 import { formatTime, formatDateForInput } from '../../utils/dateUtils';
 
 const AppointmentBooking = () => {
@@ -20,6 +21,9 @@ const AppointmentBooking = () => {
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [loadingSlots, setLoadingSlots] = useState(false);
+  const [doctorPrice, setDoctorPrice] = useState(null);
+  // Use the exact payment method values from the backend
+  const [paymentMethod, setPaymentMethod] = useState('LATER');
   
   // For walk-in patients only (when used by receptionist/admin)
   const [patientInfo, setPatientInfo] = useState({
@@ -28,18 +32,28 @@ const AppointmentBooking = () => {
     patient_phone: ''
   });
   
-  // Load doctor details
+  // Load doctor details and pricing
   useEffect(() => {
     const loadDoctor = async () => {
       if (!doctorId) return;
       
       try {
         setLoading(true);
-        const response = await fetchDoctorById(doctorId);
-        setDoctor(response.data);
-        console.log("Doctor data loaded:", response.data);
+        const [doctorResponse, pricingResponse] = await Promise.all([
+          fetchDoctorById(doctorId),
+          fetchDoctorPricing(doctorId)
+        ]);
+        
+        setDoctor(doctorResponse.data);
+        console.log("Doctor data loaded:", doctorResponse.data);
+        
+        // Set pricing if available
+        if (pricingResponse.data && pricingResponse.data.length > 0) {
+          setDoctorPrice(pricingResponse.data[0].price);
+          console.log("Doctor pricing loaded:", pricingResponse.data[0]);
+        }
       } catch (err) {
-        console.error('Failed to load doctor:', err);
+        console.error('Failed to load doctor or pricing:', err);
         setError('Could not load doctor information. Please try again.');
       } finally {
         setLoading(false);
@@ -107,7 +121,8 @@ const AppointmentBooking = () => {
         doctor: doctorId,
         appointment_time: selectedSlot.start,
         end_time: selectedSlot.end,
-        reason: reason
+        reason: reason,
+        payment_method: paymentMethod
       };
       
       // If user is not a patient, add walk-in patient info
@@ -123,33 +138,76 @@ const AppointmentBooking = () => {
         appointmentData.patient_phone = patientInfo.patient_phone;
       }
       
-      console.log("Submitting appointment with data:", appointmentData);
+      console.log('Submitting appointment data:', appointmentData);
       const response = await createAppointment(appointmentData);
-      console.log("Appointment creation response:", response.data);
+      console.log('Appointment created:', response.data);
       
+      // If user chose to pay online and we have a price, redirect to payment
+      if (response.data && paymentMethod === 'STRIPE' && doctorPrice) {
+        // Navigate to payment page with the bill ID
+        if (response.data.bill && response.data.bill.id) {
+          // Don't show success message for Stripe payments, redirect immediately
+          navigate(`/payment/${response.data.bill.id}`);
+          return;
+        } else {
+          // If no bill was created but payment method is STRIPE, show error
+          setError('Payment processing error: No bill was created for this appointment.');
+          setSubmitting(false);
+          return;
+        }
+      }
+      
+      // Only show success message for non-Stripe payments
       setSuccessMessage('Appointment booked successfully!');
       setSelectedSlot(null);
       setReason('');
       
-      // Reset form after success
+      // Redirect to appointments page after a short delay
       setTimeout(() => {
         if (user.role === 'PATIENT') {
           navigate('/patient/appointments');
+        } else if (user.role === 'RECEPTIONIST') {
+          navigate('/receptionist/appointments');
         } else {
-          // Reset the form for receptionist/admin
-          setSuccessMessage('');
-          
-          // Refresh available slots
-          fetchAvailableSlots(doctorId, date).then(res => {
-            setAvailableSlots(res.data.slots || []);
-          });
+          navigate('/admin/appointments');
         }
       }, 2000);
       
     } catch (err) {
       console.error('Failed to book appointment:', err);
-      console.error('Error details:', err.response?.data || err.message);
-      setError(err.response?.data?.error || 'Failed to book appointment. Please try again.');
+      if (err.response && err.response.data) {
+        console.error('Server error details:', err.response.data);
+        
+        // Handle different error formats from the backend
+        if (typeof err.response.data === 'string') {
+          setError(err.response.data);
+        } else if (err.response.data.error) {
+          setError(err.response.data.error);
+        } else if (err.response.data.detail) {
+          setError(err.response.data.detail);
+        } else if (err.response.data.payment_method) {
+          // Handle specific validation errors for payment_method
+          setError(`Payment method error: ${err.response.data.payment_method}`);
+        } else if (err.response.data.non_field_errors) {
+          setError(err.response.data.non_field_errors[0]);
+        } else {
+          // If there are multiple field errors, show them all
+          const errorMessages = [];
+          for (const field in err.response.data) {
+            if (Array.isArray(err.response.data[field])) {
+              errorMessages.push(`${field}: ${err.response.data[field].join(', ')}`);
+            }
+          }
+          
+          if (errorMessages.length > 0) {
+            setError(errorMessages.join('\n'));
+          } else {
+            setError('Failed to book appointment. Please try again.');
+          }
+        }
+      } else {
+        setError('Failed to book appointment. Please try again.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -271,7 +329,66 @@ const AppointmentBooking = () => {
                   rows="3"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Please briefly describe the reason for your visit"
-                ></textarea>
+                />
+              </div>
+              
+              {/* Payment Method */}
+              <div className="mb-6">
+                <label className="block text-gray-700 font-medium mb-2">
+                  Payment Method
+                </label>
+                
+                {doctorPrice ? (
+                  <div className="mb-3 p-3 bg-blue-50 rounded-md">
+                    <p className="font-medium text-blue-800">
+                      Appointment Fee: NPR {parseFloat(doctorPrice).toLocaleString()}
+                    </p>
+                    
+                    <div className="mt-4 space-y-2">
+                      <div className="flex items-center">
+                        <input
+                          type="radio"
+                          id="pay-later"
+                          name="payment-method"
+                          value="LATER"
+                          checked={paymentMethod === 'LATER'}
+                          onChange={(e) => setPaymentMethod(e.target.value)}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                        />
+                        <label htmlFor="pay-later" className="ml-2 block text-gray-700">
+                          Pay Later (at clinic)
+                        </label>
+                      </div>
+                      
+                      <div className="flex items-center">
+                        <input
+                          type="radio"
+                          id="pay-online"
+                          name="payment-method"
+                          value="STRIPE"
+                          checked={paymentMethod === 'STRIPE'}
+                          onChange={(e) => setPaymentMethod(e.target.value)}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                        />
+                        <label htmlFor="pay-online" className="ml-2 block text-gray-700">
+                          Pay Online (Credit/Debit Card)
+                        </label>
+                      </div>
+                    </div>
+                    
+                    {paymentMethod === 'STRIPE' && (
+                      <p className="mt-2 text-sm text-gray-600">
+                        You will be redirected to Stripe to complete your payment after booking.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="mb-3 p-3 bg-gray-50 rounded-md">
+                    <p className="text-gray-600">
+                      No pricing information available for this doctor.
+                    </p>
+                  </div>
+                )}
               </div>
               
               {/* Walk-in Patient Info (for receptionist/admin only) */}

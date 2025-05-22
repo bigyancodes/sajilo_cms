@@ -3,7 +3,7 @@ from django.urls import path
 from rest_framework_simplejwt.views import TokenVerifyView
 from . import views
 from .token_views import CookieTokenRefreshView, TokenVerifyView
-
+from .password_reset_views import PasswordResetRequestView, PasswordResetConfirmView
 app_name = "accounts"
 
 urlpatterns = [
@@ -16,6 +16,7 @@ urlpatterns = [
     path("logout/", views.custom_logout_view, name="logout"),
     path("register/", views.CustomRegisterView.as_view(), name="register"),
     path("profile/", views.UserProfileView.as_view(), name="profile"),
+    path("profile/photo/", views.ProfilePhotoUploadView.as_view(), name="profile_photo"),
     
     # JWT Token Management
     path("token/refresh/", CookieTokenRefreshView.as_view(), name="token_refresh"),
@@ -32,4 +33,7 @@ urlpatterns = [
     path("doctors/<int:pk>/", views.DoctorDetailView.as_view(), name="doctor_detail"),
     path("specialties/", views.SpecialtyListView.as_view(), name="specialty_list"),
     path("doctors/me/", views.CurrentDoctorView.as_view(), name="current-doctor"),
+
+    path("password-reset/", PasswordResetRequestView.as_view(), name="password_reset"),
+    path("password-reset/confirm/", PasswordResetConfirmView.as_view(), name="password_reset_confirm"),
 ]

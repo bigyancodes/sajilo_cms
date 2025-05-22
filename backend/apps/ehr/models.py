@@ -4,6 +4,11 @@ from apps.appointment.models import Appointment, AppointmentStatus
 import uuid
 import os
 
+# Define the medical record status choices
+class MedicalRecordStatus(models.TextChoices):
+    PROCESSING = 'PROCESSING', 'Processing'
+    COMPLETED = 'COMPLETED', 'Completed'
+
 def medical_attachment_path(instance, filename):
     """Generate a unique file path for medical record attachments."""
     ext = filename.split('.')[-1]
@@ -11,6 +16,7 @@ def medical_attachment_path(instance, filename):
     return f'medical_attachments/{instance.medical_record.id}/{new_filename}'
 
 class MedicalRecord(models.Model):
+    """Model for storing medical documentation for appointments"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     appointment = models.OneToOneField(
         Appointment,
@@ -23,6 +29,13 @@ class MedicalRecord(models.Model):
     treatment_plan = models.TextField(blank=True)
     notes = models.TextField(blank=True)
     is_locked = models.BooleanField(default=False, help_text="Locked when appointment is completed")
+    # Add status field to track if the record is in progress or completed
+    status = models.CharField(
+        max_length=20,
+        choices=MedicalRecordStatus.choices,
+        default=MedicalRecordStatus.PROCESSING,
+        help_text="Status of the medical record"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(
@@ -31,6 +44,7 @@ class MedicalRecord(models.Model):
         related_name='created_medical_records',
         null=True
     )
+    # Added new field for follow-up functionality
     previous_record = models.ForeignKey(
         'self',
         on_delete=models.SET_NULL,
@@ -51,49 +65,49 @@ class MedicalRecord(models.Model):
         return f"Medical Record for {self.appointment}"
     
     def save(self, *args, **kwargs):
-        if self.appointment.status == AppointmentStatus.COMPLETED:
+        # If the appointment is completed, set the is_locked flag
+        # but we'll keep the record editable
+        if self.appointment.status == AppointmentStatus.COMPLETED and not self.is_locked:
             self.is_locked = True
+            # If the record is locked and no status is explicitly set, mark as completed
+            if 'update_fields' not in kwargs or 'status' not in kwargs['update_fields']:
+                self.status = MedicalRecordStatus.COMPLETED
         super().save(*args, **kwargs)
+        
+    def mark_as_completed(self):
+        """Mark the medical record as completed"""
+        self.status = MedicalRecordStatus.COMPLETED
+        self.save(update_fields=['status', 'updated_at'])
+        return True
+        
+    def mark_as_processing(self):
+        """Mark the medical record as processing (in progress)"""
+        self.status = MedicalRecordStatus.PROCESSING
+        self.save(update_fields=['status', 'updated_at'])
+        return True
 
 class Prescription(models.Model):
+    """Model for storing prescriptions within medical records"""
     medical_record = models.ForeignKey(
         MedicalRecord,
         on_delete=models.CASCADE,
         related_name='prescriptions'
     )
-    medicine = models.ForeignKey(
-        'pharmacy.Medicine',
-        on_delete=models.PROTECT,
-        related_name='prescriptions',
-        null=True  # Temporary for migration
-    )
-    quantity = models.PositiveIntegerField(default=1)
+    medication = models.CharField(max_length=255)
     dosage = models.CharField(max_length=100)
     frequency = models.CharField(max_length=100)
     duration = models.CharField(max_length=100)
     instructions = models.TextField(blank=True)
-    fulfillment_status = models.CharField(
-        max_length=20,
-        choices=[
-            ('UNFULFILLED', 'Unfulfilled'),
-            ('FULFILLED_HERE', 'Fulfilled at Our Pharmacy'),
-            ('FULFILLED_ELSEWHERE', 'Fulfilled Elsewhere'),
-        ],
-        default='UNFULFILLED'
-    )
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
-        ordering = ['created_at']
-        indexes = [
-            models.Index(fields=['medicine']),
-            models.Index(fields=['fulfillment_status']),
-        ]
+        ordering = ['medication']
     
     def __str__(self):
-        return f"{self.medicine.name if self.medicine else 'Unknown'} - {self.dosage}"
+        return f"{self.medication} - {self.dosage}"
 
 class MedicalAttachment(models.Model):
+    """Model for storing attachments to medical records (lab reports, scans, etc.)"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     medical_record = models.ForeignKey(
         MedicalRecord,
@@ -135,6 +149,7 @@ class MedicalAttachment(models.Model):
         return ""
 
 class MedicalRecordAudit(models.Model):
+    """Model for tracking changes to medical records"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     medical_record = models.ForeignKey(
         MedicalRecord,

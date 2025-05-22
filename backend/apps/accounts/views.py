@@ -320,16 +320,51 @@ class DoctorDetailView(generics.RetrieveAPIView):
     def get_queryset(self):
         return User.objects.filter(role=UserRoles.DOCTOR)
 
-class CurrentDoctorView(APIView):
-    permission_classes = [IsAuthenticated, IsVerified]  # Ensure the user is authenticated and verified
-    serializer_class = PublicDoctorSerializer
 
+class CurrentDoctorView(APIView):
+    permission_classes = [IsAuthenticated, IsVerified]
+    serializer_class = PublicDoctorSerializer
+    
     def get(self, request):
-        user = request.user
-        if user.role != UserRoles.DOCTOR:
-            return Response(
-                {"error": "This endpoint is only for doctors."},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        serializer = self.serializer_class(user, context={'request': request})
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        try:
+            user = request.user
+            if user.role != UserRoles.DOCTOR:
+                return Response({"error": "Only doctors can access this endpoint."}, status=status.HTTP_403_FORBIDDEN)
+            
+            serializer = self.serializer_class(user, context={'request': request})
+            return Response(serializer.data)
+        except Exception as e:
+            logger.error(f"Error in CurrentDoctorView: {str(e)}")
+            return Response({"error": "Failed to retrieve doctor profile."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ProfilePhotoUploadView(APIView):
+    permission_classes = [IsAuthenticated, IsVerified]
+    
+    def post(self, request):
+        try:
+            if 'profile_photo' not in request.FILES:
+                return Response({"error": "No profile photo provided."}, status=status.HTTP_400_BAD_REQUEST)
+                
+            photo = request.FILES['profile_photo']
+            
+            # Validate file size (max 5MB)
+            if photo.size > 5 * 1024 * 1024:
+                return Response({"error": "Profile photo must be less than 5MB."}, status=status.HTTP_400_BAD_REQUEST)
+                
+            # Validate file type
+            if not photo.content_type in ['image/jpeg', 'image/png', 'image/jpg']:
+                return Response({"error": "Only JPEG, JPG, and PNG images are allowed."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            user = request.user
+            user.profile_photo = photo
+            user.save()
+            
+            return Response({
+                "message": "Profile photo updated successfully",
+                "profile_photo_url": request.build_absolute_uri(user.profile_photo.url)
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Error uploading profile photo: {str(e)}")
+            return Response({"error": "Failed to upload profile photo."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -1,4 +1,3 @@
-// src/api/axiosInstance.js
 import axios from "axios";
 
 // Base URLs
@@ -73,12 +72,10 @@ async function refreshAccessToken() {
       headers: {
         'Content-Type': 'application/json',
         'X-CSRFToken': csrfToken || '',
-        // Add cache control headers
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',
         'Expires': '0'
       },
-      // Empty body since we're using cookies
       data: {}
     });
 
@@ -170,7 +167,7 @@ rootAxiosInstance.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response Interceptor (Handle 401/403)
+// Response Interceptor (Handle 401/403) for axiosInstance
 axiosInstance.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -181,6 +178,24 @@ axiosInstance.interceptors.response.use(
       return Promise.reject(error);
     }
     
+    // Define public routes that don't require authentication
+    const publicRoutes = [
+      "/login",
+      "/register",
+      "/forgot-password",
+      "/reset-password",
+      "/unauthorized",
+      "/doctors",
+      "/payment-success",
+      "/payment-cancel",
+    ];
+
+    // Check if the current route is a reset-password route
+    const isResetPasswordRoute = window.location.pathname.startsWith("/reset-password");
+
+    // Check if the current route is public
+    const isPublicRoute = publicRoutes.some(route => window.location.pathname.startsWith(route)) || isResetPasswordRoute;
+
     // If error is 401/403 and we haven't tried refreshing yet
     if ((error.response.status === 401 || error.response.status === 403) && 
         !originalRequest._retry && 
@@ -188,6 +203,12 @@ axiosInstance.interceptors.response.use(
       
       originalRequest._retry = true;
       
+      // Skip redirect for public routes
+      if (isPublicRoute) {
+        console.log("401/403 on public route, skipping redirect:", window.location.pathname);
+        return Promise.reject(error);
+      }
+
       // Try to refresh token
       const refreshed = await refreshAccessToken();
       if (refreshed) {
@@ -201,6 +222,7 @@ axiosInstance.interceptors.response.use(
           
           // Redirect to login page after a short delay
           setTimeout(() => {
+            console.log("Redirecting to login due to failed token refresh");
             window.location.href = "/login";
           }, 100);
         }
@@ -210,7 +232,7 @@ axiosInstance.interceptors.response.use(
   }
 );
 
-// Apply the same response interceptor to rootAxiosInstance
+// Response Interceptor (Handle 401/403) for rootAxiosInstance
 rootAxiosInstance.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -221,6 +243,24 @@ rootAxiosInstance.interceptors.response.use(
       return Promise.reject(error);
     }
     
+    // Define public routes that don't require authentication
+    const publicRoutes = [
+      "/login",
+      "/register",
+      "/forgot-password",
+      "/reset-password",
+      "/unauthorized",
+      "/doctors",
+      "/payment-success",
+      "/payment-cancel",
+    ];
+
+    // Check if the current route is a reset-password route
+    const isResetPasswordRoute = window.location.pathname.startsWith("/reset-password");
+
+    // Check if the current route is public
+    const isPublicRoute = publicRoutes.some(route => window.location.pathname.startsWith(route)) || isResetPasswordRoute;
+
     // If error is 401/403 and we haven't tried refreshing yet
     if ((error.response.status === 401 || error.response.status === 403) && 
         !originalRequest._retry && 
@@ -228,6 +268,12 @@ rootAxiosInstance.interceptors.response.use(
       
       originalRequest._retry = true;
       
+      // Skip redirect for public routes
+      if (isPublicRoute) {
+        console.log("401/403 on public route, skipping redirect:", window.location.pathname);
+        return Promise.reject(error);
+      }
+
       // Try to refresh token
       const refreshed = await refreshAccessToken();
       if (refreshed) {
@@ -241,6 +287,7 @@ rootAxiosInstance.interceptors.response.use(
           
           // Redirect to login page after a short delay
           setTimeout(() => {
+            console.log("Redirecting to login due to failed token refresh");
             window.location.href = "/login";
           }, 100);
         }
@@ -281,6 +328,15 @@ export const silentTokenRefresh = async () => {
     return { success: false, error };
   }
 };
+
+// Password Reset Functions
+export const requestPasswordReset = (email) => {
+  console.log('Sending password reset request to auth/password-reset/ with email:', email);
+  return axiosInstance.post("password-reset/", { email });
+};
+
+export const confirmPasswordReset = (uid, token, password) => 
+  axiosInstance.post("password-reset/confirm/", { uid, token, password });
 
 // API Functions for auth endpoints
 export const fetchAllDoctors = (url = "doctors/") => axiosInstance.get(url);

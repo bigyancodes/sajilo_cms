@@ -4,7 +4,9 @@ import { AuthContext } from "../../context/AuthContext";
 import { 
   fetchMedicalRecordById, 
   exportMedicalRecordPdf,
-  getOrCreateMedicalRecord 
+  getOrCreateMedicalRecord,
+  markMedicalRecordAsCompleted,
+  markMedicalRecordAsProcessing
 } from "../../api/ehrService";
 import AttachmentsSection from "./AttachmentsSection";
 import PrescriptionsSection from "./PrescriptionsSection";
@@ -21,6 +23,8 @@ const StatusBadge = ({ status }) => {
         return "bg-green-100 text-green-800";
       case "CANCELLED":
         return "bg-red-100 text-red-800";
+      case "PROCESSING":
+        return "bg-orange-100 text-orange-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
@@ -39,9 +43,10 @@ const MedicalRecordView = ({ recordId, appointmentId, onClose, onEdit, readOnly 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [changingStatus, setChangingStatus] = useState(false);
   
   const isDoctor = user?.role === "DOCTOR";
-  const canEdit = isDoctor && record && !record.is_locked;
+  const canEdit = isDoctor && record;
   
   useEffect(() => {
     const loadRecord = async () => {
@@ -101,6 +106,36 @@ const MedicalRecordView = ({ recordId, appointmentId, onClose, onEdit, readOnly 
     }
   };
   
+  const handleMarkAsCompleted = async () => {
+    if (!record?.id) return;
+    
+    try {
+      setChangingStatus(true);
+      const response = await markMedicalRecordAsCompleted(record.id);
+      setRecord(response.data);
+    } catch (err) {
+      console.error("Failed to mark record as completed:", err);
+      alert("Failed to mark record as completed. Please try again.");
+    } finally {
+      setChangingStatus(false);
+    }
+  };
+  
+  const handleMarkAsProcessing = async () => {
+    if (!record?.id) return;
+    
+    try {
+      setChangingStatus(true);
+      const response = await markMedicalRecordAsProcessing(record.id);
+      setRecord(response.data);
+    } catch (err) {
+      console.error("Failed to mark record as processing:", err);
+      alert("Failed to mark record as processing. Please try again.");
+    } finally {
+      setChangingStatus(false);
+    }
+  };
+  
   if (loading) {
     return (
       <div className="w-full h-64 flex items-center justify-center">
@@ -143,13 +178,13 @@ const MedicalRecordView = ({ recordId, appointmentId, onClose, onEdit, readOnly 
       <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-6 text-white">
         <div className="flex justify-between items-center">
           <h2 className="text-xl font-bold">Medical Record</h2>
-          <div className="flex items-center space-x-3">
-            <StatusBadge status={record.appointment_status} />
+          <div className="flex items-center space-x-2">
             {record.is_locked && (
-              <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-700 text-white">
-                LOCKED
-              </span>
+              <span className="bg-yellow-500 text-white text-xs px-2 py-1 rounded-md uppercase font-semibold">LOCKED</span>
             )}
+            <span className={`text-white text-xs px-2 py-1 rounded-md uppercase font-semibold ${record.status === "PROCESSING" ? "bg-orange-500" : "bg-green-500"}`}>
+              {record.status}
+            </span>
           </div>
         </div>
         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
@@ -240,6 +275,48 @@ const MedicalRecordView = ({ recordId, appointmentId, onClose, onEdit, readOnly 
               </>
             )}
           </button>
+          
+          {isDoctor && (
+            <div className="flex space-x-2">
+              {record.status === "PROCESSING" ? (
+                <button
+                  onClick={handleMarkAsCompleted}
+                  disabled={changingStatus}
+                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {changingStatus ? (
+                    <span className="flex items-center">
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Processing...
+                    </span>
+                  ) : (
+                    "Mark as Completed"
+                  )}
+                </button>
+              ) : (
+                <button
+                  onClick={handleMarkAsProcessing}
+                  disabled={changingStatus}
+                  className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {changingStatus ? (
+                    <span className="flex items-center">
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Processing...
+                    </span>
+                  ) : (
+                    "Mark as Processing"
+                  )}
+                </button>
+              )}
+            </div>
+          )}
           
           <button
             onClick={onClose}

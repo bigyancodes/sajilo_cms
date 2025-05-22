@@ -18,6 +18,18 @@ class AppointmentStatus(models.TextChoices):
     COMPLETED = "COMPLETED", "Completed"
     MISSED = "MISSED", "Missed"
 
+class PaymentStatus(models.TextChoices):
+    PENDING = "PENDING", "Pending"
+    PAID = "PAID", "Paid"
+    REFUNDED = "REFUNDED", "Refunded"
+    CANCELLED = "CANCELLED", "Cancelled"
+
+class PaymentMethod(models.TextChoices):
+    STRIPE = "STRIPE", "Online Payment (Stripe)"
+    CASH = "CASH", "Cash"
+    INSURANCE = "INSURANCE", "Insurance"
+    LATER = "LATER", "Pay Later"
+
 class TimeOff(models.Model):
     """Model to track when doctors are unavailable for appointments"""
     doctor = models.ForeignKey(
@@ -234,6 +246,69 @@ class Appointment(models.Model):
             logger.info(f"Automatically marked {count} appointments as missed")
         
         return count
+
+class AppointmentPricing(models.Model):
+    """Model to define appointment pricing for doctors"""
+    doctor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='pricing',
+        limit_choices_to={'role': 'DOCTOR'}
+    )
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    description = models.CharField(max_length=255, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ['doctor']
+    
+    def __str__(self):
+        return f"Dr. {self.doctor.last_name} - ${self.price}"
+
+class Bill(models.Model):
+    """Model to track appointment payments"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    appointment = models.OneToOneField(
+        'Appointment', 
+        on_delete=models.CASCADE,
+        related_name='bill'
+    )
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    status = models.CharField(
+        max_length=10,
+        choices=PaymentStatus.choices,
+        default=PaymentStatus.PENDING
+    )
+    payment_method = models.CharField(
+        max_length=15,
+        choices=PaymentMethod.choices,
+        default=PaymentMethod.LATER
+    )
+    stripe_payment_id = models.CharField(max_length=100, blank=True)
+    transaction_date = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        patient_info = self.appointment.patient.email if self.appointment.patient else self.appointment.patient_name
+        return f"Bill {self.id} - {patient_info} - {self.status}"
+    
+    def mark_as_paid(self, payment_method=None, stripe_id=None):
+        """Mark bill as paid"""
+        self.status = PaymentStatus.PAID
+        self.transaction_date = timezone.now()
+        
+        if payment_method:
+            self.payment_method = payment_method
+            
+        if stripe_id:
+            self.stripe_payment_id = stripe_id
+            
+        self.save()
+        return True
 
 class AvailableTimeSlot(models.Model):
     """Model to define when doctors are available for appointments"""

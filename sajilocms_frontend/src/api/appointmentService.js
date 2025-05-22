@@ -105,6 +105,18 @@ export const fetchAdminAppointments = (params = {}) => {
   return rootAxiosInstance.get(`/appointment/admin/appointments/?${queryParams.toString()}`);
 };
 
+// Receptionist Appointments
+export const fetchReceptionistAppointments = (params = {}) => {
+  const queryParams = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {  // Only add defined values
+      queryParams.append(key, value);
+    }
+  });
+  
+  return rootAxiosInstance.get(`/appointment/receptionist/appointments/?${queryParams.toString()}`);
+};
+
 export const fetchDoctorStats = (dateFrom = "", dateTo = "") => {
   let url = '/appointment/admin/doctor-stats/';
   if (dateFrom || dateTo) {

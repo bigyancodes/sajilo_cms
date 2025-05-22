@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prescription Refill Reminder</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background-color: #3f51b5;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .content {
+            padding: 20px;
+            background-color: #f9f9f9;
+        }
+        .footer {
+            text-align: center;
+            padding: 20px;
+            font-size: 12px;
+            color: #777;
+        }
+        .prescription-info {
+            background-color: white;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #3f51b5;
+        }
+        .button {
+            display: inline-block;
+            background-color: #3f51b5;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        .reminder-icon {
+            font-size: 48px;
+            color: #3f51b5;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Prescription Refill Reminder</h1>
+            <p>It's time to refill your prescription</p>
+        </div>
+        
+        <div class="content">
+            <div style="text-align: center;">
+                <div class="reminder-icon">🔔</div>
+                <h2>Your Prescription Needs Refilling</h2>
+            </div>
+            
+            <p>Dear {{ patient.get_full_name|default:patient.username }},</p>
+            
+            <p>This is a friendly reminder that your prescription is due for a refill. Here are the details:</p>
+            
+            <div class="prescription-info">
+                <h3>Prescription Details</h3>
+                <p><strong>Medicine:</strong> {{ prescription.medicine.name }}</p>
+                <p><strong>Prescribed By:</strong> Dr. {{ prescription.doctor.get_full_name }}</p>
+                <p><strong>Prescribed On:</strong> {{ prescription.prescribed_date|date:"F j, Y" }}</p>
+                <p><strong>Refill Due:</strong> {{ prescription.next_refill_date|date:"F j, Y" }}</p>
+                <p><strong>Instructions:</strong> {{ prescription.instructions }}</p>
+            </div>
+            
+            <p>To ensure you don't run out of your medication, we recommend refilling your prescription as soon as possible.</p>
+            
+            <p>You can order a refill by clicking the button below:</p>
+            
+            <a href="{{ site_url }}/pharmacy/prescriptions/refill/{{ prescription.id }}" class="button">Order Refill</a>
+            
+            <p>Alternatively, you can visit our pharmacy in person or call us to arrange your refill.</p>
+            
+            <p><strong>Note:</strong> If you have already refilled this prescription or if your doctor has changed your medication, please disregard this reminder.</p>
+            
+            <p>Thank you for choosing Sajilo Pharmacy for your healthcare needs!</p>
+        </div>
+        
+        <div class="footer">
+            <p>&copy; {% now "Y" %} Sajilo Pharmacy. All rights reserved.</p>
+            <p>This email was sent to {{ patient.email }}</p>
+            <p>If you no longer wish to receive these reminders, please <a href="{{ site_url }}/account/notifications">update your notification preferences</a>.</p>
+        </div>
+    </div>
+</body>
+</html>

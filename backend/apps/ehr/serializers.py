@@ -1,27 +1,14 @@
 from rest_framework import serializers
 from django.utils import timezone
-from .models import MedicalRecord, Prescription, MedicalAttachment, MedicalRecordAudit
+from .models import MedicalRecord, Prescription, MedicalAttachment, MedicalRecordAudit, MedicalRecordStatus
 from apps.appointment.models import Appointment, AppointmentStatus
 from apps.accounts.models import UserRoles
-from apps.pharmacy.models import Medicine
-from apps.pharmacy.serializers import MedicineSerializer
 
 class PrescriptionSerializer(serializers.ModelSerializer):
-    medicine = MedicineSerializer(read_only=True)
-    medicine_id = serializers.PrimaryKeyRelatedField(
-        queryset=Medicine.objects.all(),
-        source='medicine',
-        write_only=True
-    )
-
     class Meta:
         model = Prescription
-        fields = [
-            'id', 'medical_record', 'medicine', 'medicine_id', 'quantity',
-            'dosage', 'frequency', 'duration', 'instructions',
-            'fulfillment_status', 'created_at'
-        ]
-        read_only_fields = ['id', 'created_at', 'fulfillment_status']
+        fields = ['id', 'medication', 'dosage', 'frequency', 'duration', 'instructions', 'created_at']
+        read_only_fields = ['id', 'created_at']
 
 class MedicalAttachmentSerializer(serializers.ModelSerializer):
     file_url = serializers.SerializerMethodField()
@@ -79,16 +66,16 @@ class MedicalRecordSerializer(serializers.ModelSerializer):
     previous_record_id = serializers.UUIDField(required=False, allow_null=True, write_only=True)
     previous_record_info = serializers.SerializerMethodField()
     follow_up_records = serializers.SerializerMethodField()
-    patient_id = serializers.SerializerMethodField()
+    patient_id = serializers.SerializerMethodField()  # Added patient_id field
     
     class Meta:
         model = MedicalRecord
         fields = [
             'id', 'appointment', 'chief_complaint', 'observations', 'diagnosis',
-            'treatment_plan', 'notes', 'is_locked', 'prescriptions', 'attachments',
+            'treatment_plan', 'notes', 'is_locked', 'status', 'prescriptions', 'attachments',
             'audit_logs', 'created_at', 'updated_at', 'patient_name', 'doctor_name', 
             'appointment_time', 'appointment_status', 'previous_record', 'previous_record_id',
-            'previous_record_info', 'follow_up_records', 'patient_id'
+            'previous_record_info', 'follow_up_records', 'patient_id'  # Added patient_id to fields
         ]
         read_only_fields = ['id', 'is_locked', 'created_at', 'updated_at', 'audit_logs', 
                            'previous_record_info', 'follow_up_records', 'patient_id']
@@ -179,16 +166,8 @@ class MedicalRecordSerializer(serializers.ModelSerializer):
         return medical_record
     
     def update(self, instance, validated_data):
-        if instance.is_locked:
-            notes = validated_data.pop('notes', None)
-            if notes is not None:
-                instance.notes = notes
-                instance.save(update_fields=['notes', 'updated_at'])
-            if validated_data:
-                raise serializers.ValidationError(
-                    "This medical record is locked. Only notes can be updated."
-                )
-            return instance
+        # We're removing the lock restriction to allow editing completed records
+        # This will allow doctors to update records even after appointments are completed
         
         prescriptions_data = validated_data.pop('prescriptions', None)
         if prescriptions_data is not None:
@@ -226,6 +205,7 @@ class MedicalAttachmentCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "You can only add attachments to your own appointments"
             )
+        # We're removing the check for locked records to allow attachments after completion
         return medical_record
     
     def create(self, validated_data):

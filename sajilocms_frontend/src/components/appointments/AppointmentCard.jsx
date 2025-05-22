@@ -27,9 +27,11 @@ const AppointmentCard = ({
   onCancel, 
   onConfirm, 
   onComplete, 
+  onEdit,
   isCancelling = false,
   isConfirming = false,
   isCompleting = false,
+  isEditing = false,
   isPatientView = false,
   isDoctorView = false
 }) => {
@@ -51,9 +53,9 @@ const AppointmentCard = ({
           
           <h3 className="text-lg font-medium text-gray-900 mt-2">
             {isPatientView ? (
-              <>{appointment.doctor_name}</>
+              <>{appointment.doctor_name || (appointment.doctor && appointment.doctor.username) || 'Unknown Doctor'}</>
             ) : (
-              <>{appointment.patient_name || 'Patient'}</>
+              <>{appointment.patient_name || (appointment.patient && appointment.patient.username) || 'Unknown Patient'}</>
             )}
           </h3>
           
@@ -83,7 +85,7 @@ const AppointmentCard = ({
         </div>
         
         <div className="space-y-2 md:space-y-0 md:space-x-2 flex flex-col md:flex-row">
-          {appointment.can_modify && appointment.status !== 'CANCELLED' && onCancel && (
+          {appointment.can_modify && !['CANCELLED', 'MISSED', 'COMPLETED'].includes(appointment.status) && onCancel && (
             <button
               onClick={onCancel}
               disabled={isCancelling}
@@ -95,7 +97,7 @@ const AppointmentCard = ({
             </button>
           )}
           
-          {isDoctorView && appointment.status === 'PENDING' && onConfirm && (
+          {(isDoctorView || !isPatientView) && appointment.status === 'PENDING' && onConfirm && (
             <button
               onClick={onConfirm}
               disabled={isConfirming}
@@ -116,6 +118,18 @@ const AppointmentCard = ({
               }`}
             >
               {isCompleting ? 'Completing...' : 'Complete'}
+            </button>
+          )}
+          
+          {!isPatientView && ['PENDING', 'CONFIRMED'].includes(appointment.status) && onEdit && (
+            <button
+              onClick={onEdit}
+              disabled={isEditing}
+              className={`px-3 py-1 border border-purple-300 text-purple-700 rounded-md text-sm hover:bg-purple-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 ${
+                isEditing ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+            >
+              {isEditing ? 'Editing...' : 'Edit'}
             </button>
           )}
         </div>

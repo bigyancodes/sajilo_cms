@@ -309,13 +309,12 @@ const WeeklyScheduleTab = ({ userId }) => {
             </button>
           </div>
         ) : (
-          <button
+            <button
             type="button"
             onClick={handleAddTimeSlot}
             disabled={actionLoading}
-            className={`w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-              actionLoading ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
+            className={`px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:ring-offset-2 text-sm font-medium ${actionLoading ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
           >
             {actionLoading ? 'Adding...' : 'Add Time Slot'}
           </button>
@@ -678,7 +677,7 @@ const TimeOffTab = ({ userId }) => {
             <button
               type="submit"
               disabled={submitting}
-              className={`w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+              className={`px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:ring-offset-2 text-sm font-medium ${
                 submitting ? 'opacity-50 cursor-not-allowed' : ''
               }`}
             >

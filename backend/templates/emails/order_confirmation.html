@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Confirmation - #{{ order.order_number }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background-color: #1976d2;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .content {
+            padding: 20px;
+            background-color: #f9f9f9;
+        }
+        .footer {
+            text-align: center;
+            padding: 20px;
+            font-size: 12px;
+            color: #777;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .total-row {
+            font-weight: bold;
+        }
+        .button {
+            display: inline-block;
+            background-color: #1976d2;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        .order-info {
+            background-color: white;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Order Confirmation</h1>
+            <p>Thank you for your order!</p>
+        </div>
+        
+        <div class="content">
+            <p>Dear {{ order.user.get_full_name|default:order.user.email }},</p>
+            
+            <p>Your order has been received and is being processed. Here are your order details:</p>
+            
+            <div class="order-info">
+                <p><strong>Order Number:</strong> #{{ order.order_number }}</p>
+                <p><strong>Order Date:</strong> {{ order.created_at|date:"F j, Y" }}</p>
+                <p><strong>Delivery Type:</strong> {{ order.delivery_type }}</p>
+                {% if order.delivery_type == 'DELIVERY' %}
+                <p><strong>Delivery Address:</strong> {{ order.delivery_address }}</p>
+                <p><strong>Delivery Phone:</strong> {{ order.delivery_phone }}</p>
+                {% endif %}
+                {% if order.delivery_notes %}
+                <p><strong>Notes:</strong> {{ order.delivery_notes }}</p>
+                {% endif %}
+                <p><strong>Status:</strong> {{ order.status }}</p>
+            </div>
+            
+            <h3>Order Items</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Item</th>
+                        <th>Quantity</th>
+                        <th>Price</th>
+                        <th>Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in order_items %}
+                    <tr>
+                        <td>{{ item.medicine.name }}</td>
+                        <td>{{ item.quantity }}</td>
+                        <td>NPR {{ item.unit_price }}</td>
+                        <td>NPR {{ item.total_price }}</td>
+                    </tr>
+                    {% endfor %}
+                    <tr>
+                        <td colspan="3" style="text-align: right;"><strong>Subtotal:</strong></td>
+                        <td>NPR {{ subtotal }}</td>
+                    </tr>
+                    <tr>
+                        <td colspan="3" style="text-align: right;"><strong>Tax (13%):</strong></td>
+                        <td>NPR {{ tax|floatformat:2 }}</td>
+                    </tr>
+                    {% if order.delivery_type == 'DELIVERY' %}
+                    <tr>
+                        <td colspan="3" style="text-align: right;"><strong>Delivery Fee:</strong></td>
+                        <td>NPR 100.00</td>
+                    </tr>
+                    {% endif %}
+                    <tr class="total-row">
+                        <td colspan="3" style="text-align: right;"><strong>Total:</strong></td>
+                        <td>NPR {{ total|floatformat:2 }}</td>
+                    </tr>
+                </tbody>
+            </table>
+            
+            <p>You can track your order status by clicking the button below:</p>
+            
+            <a href="{{ site_url }}/pharmacy/orders/{{ order.id }}" class="button">Track Order</a>
+            
+            <p>If you have any questions about your order, please contact our customer service.</p>
+            
+            <p>Thank you for choosing Sajilo Pharmacy!</p>
+        </div>
+        
+        <div class="footer">
+            <p>&copy; {{ order.created_at|date:"Y" }} Sajilo Pharmacy. All rights reserved.</p>
+            <p>This email was sent to {{ order.user.email }}</p>
+        </div>
+    </div>
+</body>
+</html>

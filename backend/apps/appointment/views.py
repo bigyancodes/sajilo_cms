@@ -5,13 +5,17 @@ from rest_framework.permissions import IsAuthenticated
 from django.db.models import Count, Q
 from django.utils import timezone
 from django.contrib.auth import get_user_model
-from .models import Appointment, TimeOff, AvailableTimeSlot, AppointmentStatus
+from django.http import HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.conf import settings
+import stripe
+from .models import Appointment, TimeOff, AvailableTimeSlot, AppointmentStatus, PaymentStatus, PaymentMethod, AppointmentPricing, Bill
 from .models import APPOINTMENT_DURATION_MINUTES, CANCELLATION_WINDOW_HOURS
 from .serializers import (
     AppointmentSerializer, TimeOffSerializer, AvailableTimeSlotSerializer,
     AppointmentUpdateSerializer, DoctorAppointmentUpdateSerializer,
     AvailableTimeSlotListSerializer, TimeOffApprovalSerializer,
-    WeeklyScheduleSerializer
+    WeeklyScheduleSerializer, AppointmentPricingSerializer, BillSerializer
 )
 from apps.accounts.models import UserRoles
 from apps.accounts.permissions import IsAdminOrSuperuser, IsVerified, IsStaff
@@ -271,10 +275,28 @@ class AvailableTimeSlotViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         user = self.request.user
-        if user.role == UserRoles.DOCTOR:
-            serializer.save(doctor=user)
+        payment_method = serializer.validated_data.pop('payment_method', PaymentMethod.LATER) if 'payment_method' in serializer.validated_data else PaymentMethod.LATER
+        
+        if user.role == UserRoles.PATIENT:
+            appointment = serializer.save(patient=user, created_by=user)
         else:
-            serializer.save()
+            appointment = serializer.save(created_by=user)
+        
+        # Try to find price for the doctor
+        try:
+            pricing = AppointmentPricing.objects.get(doctor=appointment.doctor, is_active=True)
+            
+            # Create bill
+            Bill.objects.create(
+                appointment=appointment,
+                amount=pricing.price,
+                payment_method=payment_method,
+                status=PaymentStatus.PENDING
+            )
+        except AppointmentPricing.DoesNotExist:
+            logger.warning(f"No pricing set for doctor {appointment.doctor.id}")
+            
+        return appointment
     
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated, IsVerified, IsDoctorOrAdminOrReceptionist])
     def set_weekly_schedule(self, request):
@@ -613,13 +635,52 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         user = self.request.user
+        payment_method = serializer.validated_data.pop('payment_method', PaymentMethod.LATER) if 'payment_method' in serializer.validated_data else PaymentMethod.LATER
         
         # Note: timezone conversion is now handled in the serializer's validate method
         
         if user.role == UserRoles.PATIENT:
-            serializer.save(patient=user, created_by=user)
+            appointment = serializer.save(patient=user, created_by=user)
         else:
-            serializer.save(created_by=user)
+            appointment = serializer.save(created_by=user)
+        
+        logger.info(f"Appointment created with ID: {appointment.id}, payment method: {payment_method}")
+        
+        # Try to find price for the doctor
+        try:
+            pricing = AppointmentPricing.objects.get(doctor=appointment.doctor, is_active=True)
+            logger.info(f"Found pricing for doctor {appointment.doctor.id}: {pricing.price}")
+            
+            # Create bill
+            bill = Bill.objects.create(
+                appointment=appointment,
+                amount=pricing.price,
+                payment_method=payment_method,
+                status=PaymentStatus.PENDING
+            )
+            logger.info(f"Bill created with ID: {bill.id} for appointment {appointment.id}")
+        except AppointmentPricing.DoesNotExist:
+            logger.warning(f"No pricing set for doctor {appointment.doctor.id}, using default price")
+            # Create bill with default price
+            bill = Bill.objects.create(
+                appointment=appointment,
+                amount=1000,  # Default price in NPR
+                payment_method=payment_method,
+                status=PaymentStatus.PENDING
+            )
+            logger.info(f"Bill created with default price, ID: {bill.id} for appointment {appointment.id}")
+        except Exception as e:
+            logger.error(f"Error creating bill for appointment {appointment.id}: {str(e)}")
+            raise serializers.ValidationError({"bill_error": f"Failed to create bill: {str(e)}"})
+        
+        # If payment method is STRIPE, ensure bill was created
+        if payment_method == PaymentMethod.STRIPE:
+            # Verify bill exists
+            bill = Bill.objects.filter(appointment=appointment).first()
+            if not bill:
+                logger.error(f"No bill found for appointment {appointment.id} with STRIPE payment method")
+                raise serializers.ValidationError({"payment_error": "Failed to create bill for online payment"})
+            logger.info(f"Verified bill exists for STRIPE payment, bill ID: {bill.id}")
     
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsVerified])
     def cancel(self, request, pk=None):
@@ -654,16 +715,12 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         if appointment.mark_completed():
             serializer = self.get_serializer(appointment)
             return Response(serializer.data)
-        else:
-            return Response({
-                "detail": "Cannot complete this appointment due to its current status"
-            }, status=status.HTTP_400_BAD_REQUEST)
-    
-    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsVerified, IsDoctor])
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsVerified, IsDoctorOrAdminOrReceptionist])
     def confirm(self, request, pk=None):
-        """Endpoint for doctors to confirm a pending appointment"""
+        """Endpoint for doctors or receptionists to confirm a pending appointment"""
         appointment = self.get_object()
-        if request.user != appointment.doctor:
+        # Allow doctors to confirm their own appointments or receptionists to confirm any appointment
+        if request.user.role == UserRoles.DOCTOR and request.user != appointment.doctor:
             return Response({
                 "detail": "You can only confirm your own appointments"
             }, status=status.HTTP_403_FORBIDDEN)
@@ -711,7 +768,16 @@ class DoctorAppointmentListView(generics.ListAPIView):
         if status_param:
             queryset = queryset.filter(status=status_param)
         
-        if filter_type == 'upcoming':
+        if filter_type == 'today':
+            # Get today's appointments (from midnight to 11:59 PM)
+            today = timezone.now().date()
+            today_start = timezone.make_aware(datetime.combine(today, time.min))
+            today_end = timezone.make_aware(datetime.combine(today, time.max))
+            return queryset.filter(
+                appointment_time__gte=today_start,
+                appointment_time__lte=today_end
+            ).order_by('appointment_time')
+        elif filter_type == 'upcoming':
             return queryset.filter(
                 appointment_time__gt=timezone.now()
             ).order_by('appointment_time')
@@ -773,5 +839,380 @@ class ReceptionistAppointmentListView(generics.ListAPIView):
                 pass
 
         return queryset.order_by('-appointment_time')
+
+
+# === Billing Management ===
+class AppointmentPricingViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing doctor appointment pricing"""
+    serializer_class = AppointmentPricingSerializer
+    permission_classes = [IsAuthenticated, IsVerified]
+    
+    def get_queryset(self):
+        user = self.request.user
+        queryset = AppointmentPricing.objects.all().select_related('doctor')
+        
+        # Filter by doctor_id if provided
+        doctor_id = self.request.query_params.get('doctor_id')
+        if doctor_id:
+            queryset = queryset.filter(doctor_id=doctor_id)
+        
+        # Admin and Receptionist can see all pricing
+        if user.role in [UserRoles.ADMIN, UserRoles.RECEPTIONIST]:
+            return queryset
+        # Doctors can only see their own pricing
+        elif user.role == UserRoles.DOCTOR:
+            return queryset.filter(doctor=user)
+        # Patients can see all pricing (for booking appointments)
+        elif user.role == UserRoles.PATIENT:
+            return queryset
+            
+        return AppointmentPricing.objects.none()
+    
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsAuthenticated(), IsVerified(), IsAdminOrSuperuser()]
+        return super().get_permissions()
+
+class BillViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing appointment bills"""
+    queryset = Bill.objects.all().select_related('appointment__doctor', 'appointment__patient')
+    serializer_class = BillSerializer
+    permission_classes = [IsAuthenticated, IsVerified]
+    
+    def get_queryset(self):
+        user = self.request.user
+        queryset = Bill.objects.all().select_related('appointment__doctor', 'appointment__patient')
+        
+        # Filter by status if provided
+        status_param = self.request.query_params.get('status')
+        if status_param:
+            queryset = queryset.filter(status=status_param)
+            
+        # Filter by payment_method if provided
+        payment_method = self.request.query_params.get('payment_method')
+        if payment_method:
+            queryset = queryset.filter(payment_method=payment_method)
+        
+        # For retrieve actions (getting a single bill by ID), allow access if the user is the patient
+        # associated with the bill or has admin/receptionist/doctor role
+        if self.action == 'retrieve':
+            bill_id = self.kwargs.get('pk')
+            if bill_id:
+                try:
+                    bill = Bill.objects.get(id=bill_id)
+                    if user.role in [UserRoles.ADMIN, UserRoles.RECEPTIONIST]:
+                        return queryset
+                    elif user.role == UserRoles.DOCTOR and bill.appointment and bill.appointment.doctor == user:
+                        return queryset
+                    elif user.role == UserRoles.PATIENT and bill.appointment and bill.appointment.patient == user:
+                        return queryset.filter(id=bill_id)
+                except Bill.DoesNotExist:
+                    pass
+        
+        # For list actions
+        if user.role == UserRoles.DOCTOR:
+            # Doctors can only see bills for their appointments
+            return queryset.filter(appointment__doctor=user)
+        elif user.role in [UserRoles.ADMIN, UserRoles.RECEPTIONIST]:
+            # Admins and receptionists can see all bills
+            return queryset
+        elif user.role == UserRoles.PATIENT:
+            # Patients can only see their own bills through the patient/ endpoint
+            return Bill.objects.none()
+        else:
+            # Other users can't see any bills by default
+            return Bill.objects.none()
+    
+    def get_permissions(self):
+        if self.action in ['update', 'partial_update', 'destroy']:
+            return [IsAuthenticated(), IsVerified(), IsAdminOrSuperuser()]
+        return super().get_permissions()
+    
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsVerified])
+    def mark_paid(self, request, pk=None):
+        """Mark a bill as paid (for cash/insurance payments)"""
+        bill = self.get_object()
+        
+        # Check permissions based on user role
+        if request.user.role == UserRoles.PATIENT:
+            # Patients can only mark their own bills as paid
+            if bill.appointment and bill.appointment.patient != request.user:
+                return Response(
+                    {"error": "Patients can only mark their own bills as paid"},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            # Patients can only use Stripe as payment method
+            if request.data.get('payment_method') != PaymentMethod.STRIPE:
+                return Response(
+                    {"error": "Patients can only use online payment method"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        # Admin and receptionists can mark any bill as paid
+        elif request.user.role not in [UserRoles.ADMIN, UserRoles.RECEPTIONIST]:
+            return Response(
+                {"error": "Only administrators, receptionists, or the patient can mark bills as paid"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        payment_method = request.data.get('payment_method', PaymentMethod.CASH)
+        notes = request.data.get('notes', '')
+        
+        try:
+            bill.mark_as_paid(payment_method=payment_method)
+            
+            if notes:
+                bill.notes = notes
+                bill.save()
+                
+            serializer = self.get_serializer(bill)
+            return Response(serializer.data)
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to mark bill as paid: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated, IsVerified])
+    def patient(self, request):
+        """Get all bills for the current patient"""
+        user = request.user
+        
+        # Only patients can access this endpoint
+        if user.role != UserRoles.PATIENT:
+            return Response(
+                {"error": "Only patients can access their bills through this endpoint"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Get all bills for the patient's appointments, excluding canceled appointments
+        bills = Bill.objects.filter(
+            appointment__patient=user
+        ).exclude(
+            appointment__status=AppointmentStatus.CANCELLED  # Exclude canceled appointments
+        ).select_related(
+            'appointment', 'appointment__doctor'
+        )
+        
+        serializer = self.get_serializer(bills, many=True)
+        return Response(serializer.data)
+
+# Initialize Stripe with API key
+stripe.api_key = settings.STRIPE_SECRET_KEY
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_stripe_checkout(request):
+    """Create a Stripe Checkout Session for appointment payment"""
+    try:
+        bill_id = request.data.get('bill_id')
+        success_url = request.data.get('success_url', f"{settings.FRONTEND_URL}/payment-success")
+        cancel_url = request.data.get('cancel_url', f"{settings.FRONTEND_URL}/payment-cancel")
+        
+        if not bill_id:
+            return Response({"error": "Bill ID is required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        # Get the bill
+        try:
+            bill = Bill.objects.select_related('appointment__doctor').get(id=bill_id)
+        except Bill.DoesNotExist:
+            return Response({"error": "Bill not found"}, status=status.HTTP_404_NOT_FOUND)
+            
+        # Ensure bill is pending
+        if bill.status != PaymentStatus.PENDING:
+            return Response({"error": "Bill is not pending payment"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        # Get patient name
+        patient_name = bill.appointment.patient_name
+        if bill.appointment.patient:
+            patient_name = bill.appointment.patient.get_full_name()
+            
+        # Create checkout session
+        checkout_session = stripe.checkout.Session.create(
+            payment_method_types=['card'],
+            line_items=[{
+                'price_data': {
+                    'currency': 'npr',  # Use NPR (Nepalese Rupee) instead of USD
+                    'product_data': {
+                        'name': f'Appointment with Dr. {bill.appointment.doctor.last_name}',
+                        'description': f'Appointment on {bill.appointment.appointment_time.strftime("%Y-%m-%d %H:%M")}',
+                    },
+                    'unit_amount': int(float(bill.amount) * 100),  # Convert to cents
+                },
+                'quantity': 1,
+            }],
+            mode='payment',
+            success_url=f"{success_url}?session_id={{CHECKOUT_SESSION_ID}}&bill_id={bill.id}",  # Include bill_id in success URL
+            cancel_url=cancel_url,
+            client_reference_id=str(bill.id),  # Store bill ID for webhook
+            customer_email=bill.appointment.patient_email if bill.appointment.patient_email else None,
+            metadata={
+                'bill_id': str(bill.id),
+                'appointment_id': str(bill.appointment.id),
+                'patient_name': patient_name
+            }
+        )
+        
+        # Update bill to indicate Stripe payment is in progress
+        bill.payment_method = PaymentMethod.STRIPE
+        bill.save()
+        
+        return Response({
+            'session_id': checkout_session.id,
+            'checkout_url': checkout_session.url
+        })
+        
+    except stripe.error.StripeError as e:
+        return Response({"error": f"Stripe error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@csrf_exempt
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def confirm_stripe_payment(request, bill_id):
+    """Directly mark a bill as paid after Stripe payment
+    This endpoint is used as a backup when the webhook fails to update the bill status
+    """
+    try:
+        # Get the bill
+        bill = Bill.objects.get(id=bill_id)
+        
+        # Verify the user is the patient associated with this bill
+        if request.user.role == UserRoles.PATIENT and bill.appointment and bill.appointment.patient != request.user:
+            return Response(
+                {"error": "You can only confirm payment for your own bills"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Check if bill is already paid
+        if bill.status == PaymentStatus.PAID:
+            return Response({"message": "Bill is already marked as paid", "status": "PAID"})
+        
+        # Get session ID from request data if available
+        session_id = request.data.get('session_id', 'manual-confirmation')
+        
+        # Mark the bill as paid
+        bill.mark_as_paid(
+            payment_method=PaymentMethod.STRIPE,
+            stripe_id=session_id
+        )
+        
+        # Add notes if provided
+        notes = request.data.get('notes')
+        if notes:
+            bill.notes = notes
+            bill.save()
+        
+        logger.info(f"Bill {bill_id} manually marked as paid by user {request.user.id}")
+        
+        return Response({
+            "message": "Payment confirmed successfully",
+            "status": "PAID",
+            "bill_id": str(bill_id)
+        })
+        
+    except Bill.DoesNotExist:
+        return Response({"error": "Bill not found"}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error confirming payment for bill {bill_id}: {str(e)}")
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+def stripe_webhook(request):
+    """Handle Stripe webhook events"""
+    payload = request.body
+    sig_header = request.META.get('HTTP_STRIPE_SIGNATURE')
+    
+    if not sig_header:
+        logger.error("Missing Stripe signature header")
+        return HttpResponse(status=400)
+    
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, settings.STRIPE_WEBHOOK_SECRET
+        )
+    except ValueError as e:
+        # Invalid payload
+        logger.error(f"Invalid Stripe payload: {str(e)}")
+        return HttpResponse(status=400)
+    except stripe.error.SignatureVerificationError as e:
+        # Invalid signature
+        logger.error(f"Invalid Stripe signature: {str(e)}")
+        return HttpResponse(status=400)
+    
+    logger.info(f"Received Stripe event: {event['type']}")
+        
+    # Handle the checkout.session.completed event
+    if event['type'] == 'checkout.session.completed':
+        session = event['data']['object']
+        logger.info(f"Processing completed checkout session: {session.id}")
+        
+        # Get the bill ID from client_reference_id
+        bill_id = session.get('client_reference_id')
+        if not bill_id:
+            logger.error("Missing client_reference_id in Stripe session")
+            return HttpResponse(status=400)
+            
+        # Get payment intent ID
+        payment_intent = session.get('payment_intent')
+        logger.info(f"Payment intent: {payment_intent} for bill: {bill_id}")
+        
+        # Update the bill
+        try:
+            bill = Bill.objects.get(id=bill_id)
+            
+            # Check if bill is already paid
+            if bill.status == PaymentStatus.PAID:
+                logger.info(f"Bill {bill_id} is already marked as paid")
+                return HttpResponse(status=200)
+                
+            bill.mark_as_paid(
+                payment_method=PaymentMethod.STRIPE,
+                stripe_id=payment_intent
+            )
+            logger.info(f"Payment successful for bill {bill_id}")
+            
+            # Send confirmation email if patient email is available
+            if bill.appointment and bill.appointment.patient_email:
+                try:
+                    # This would be implemented with your email sending logic
+                    # send_payment_confirmation_email(bill)
+                    logger.info(f"Payment confirmation email sent for bill {bill_id}")
+                except Exception as email_error:
+                    logger.error(f"Failed to send payment confirmation email: {str(email_error)}")
+                    
+        except Bill.DoesNotExist:
+            logger.error(f"Bill {bill_id} not found for payment {payment_intent}")
+            return HttpResponse(status=404)
+        except Exception as e:
+            logger.error(f"Error processing payment for bill {bill_id}: {str(e)}")
+            return HttpResponse(status=500)
+    
+    # Handle payment_intent.succeeded event as a backup
+    elif event['type'] == 'payment_intent.succeeded':
+        payment_intent = event['data']['object']
+        metadata = payment_intent.get('metadata', {})
+        bill_id = metadata.get('bill_id')
+        
+        if bill_id:
+            try:
+                bill = Bill.objects.get(id=bill_id)
+                
+                # Check if bill is already paid
+                if bill.status == PaymentStatus.PAID:
+                    logger.info(f"Bill {bill_id} is already marked as paid")
+                    return HttpResponse(status=200)
+                    
+                bill.mark_as_paid(
+                    payment_method=PaymentMethod.STRIPE,
+                    stripe_id=payment_intent.id
+                )
+                logger.info(f"Payment successful for bill {bill_id} via payment_intent.succeeded")
+            except Bill.DoesNotExist:
+                logger.error(f"Bill {bill_id} not found for payment intent {payment_intent.id}")
+            except Exception as e:
+                logger.error(f"Error processing payment intent for bill {bill_id}: {str(e)}")
+    
+    return HttpResponse(status=200)
 
 

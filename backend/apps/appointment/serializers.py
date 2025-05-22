@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.utils import timezone
 from django.contrib.auth import get_user_model
-from .models import Appointment, TimeOff, AvailableTimeSlot, AppointmentStatus
+from .models import Appointment, TimeOff, AvailableTimeSlot, AppointmentStatus, PaymentStatus, PaymentMethod, AppointmentPricing, Bill
 from .models import APPOINTMENT_DURATION_MINUTES, CANCELLATION_WINDOW_HOURS
 from django.db.models import Q
 from datetime import timedelta
@@ -142,12 +142,89 @@ class WeeklyScheduleSerializer(serializers.Serializer):
         schedule = validated_data['schedule']
         return AvailableTimeSlot.create_weekly_schedule(doctor, schedule)
 
+class AppointmentPricingSerializer(serializers.ModelSerializer):
+    doctor_name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = AppointmentPricing
+        fields = ['id', 'doctor', 'doctor_name', 'price', 'description', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
+        
+    def get_doctor_name(self, obj):
+        return f"Dr. {obj.doctor.first_name} {obj.doctor.last_name}"
+
+class BillSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Bill
+        fields = [
+            'id', 'appointment', 'amount', 'status', 'payment_method',
+            'stripe_payment_id', 'transaction_date', 'notes',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['created_at', 'updated_at', 'id']
+    
+    def to_representation(self, instance):
+        # Get the default representation
+        representation = super().to_representation(instance)
+        
+        # Include basic appointment data without creating a circular reference
+        if instance.appointment:
+            # Format date and time for display
+            appointment_date = None
+            appointment_time_str = None
+            if instance.appointment.appointment_time:
+                appointment_date = instance.appointment.appointment_time.strftime('%Y-%m-%d')
+                appointment_time_str = instance.appointment.appointment_time.strftime('%H:%M')
+            
+            # Get patient information
+            patient_name = ''
+            patient_email = ''
+            patient_phone = ''
+            
+            if instance.appointment.patient:
+                patient = instance.appointment.patient
+                patient_name = f"{patient.first_name} {patient.last_name}".strip()
+                patient_email = patient.email
+                patient_phone = getattr(patient, 'phone', '')
+            else:
+                patient_name = instance.appointment.patient_name or ''
+                patient_email = instance.appointment.patient_email or ''
+                patient_phone = instance.appointment.patient_phone or ''
+            
+            # Include only essential appointment fields to avoid circular reference
+            representation['appointment_details'] = {
+                'id': instance.appointment.id,
+                'appointment_date': appointment_date,
+                'appointment_time': appointment_time_str,
+                'appointment_time_iso': instance.appointment.appointment_time.isoformat() if instance.appointment.appointment_time else None,
+                'status': instance.appointment.status,
+                'doctor_name': f"Dr. {instance.appointment.doctor.first_name} {instance.appointment.doctor.last_name}" if instance.appointment.doctor else None,
+                'patient_name': patient_name,
+                'patient_email': patient_email,
+                'patient_phone': patient_phone,
+                'reason': instance.appointment.reason
+            }
+            
+            # Add created_at date for the bill
+            if instance.created_at:
+                representation['bill_date'] = instance.created_at.strftime('%Y-%m-%d')
+        
+        return representation
+        
+    # Appointment details are now handled directly in to_representation
+
 class AppointmentSerializer(serializers.ModelSerializer):
     doctor_name = serializers.SerializerMethodField()
     patient_name = serializers.CharField(required=False, allow_blank=True)
     patient_email = serializers.EmailField(required=False, allow_blank=True)
     patient_phone = serializers.CharField(required=False, allow_blank=True)
     can_modify = serializers.SerializerMethodField()
+    payment_method = serializers.ChoiceField(
+        choices=[(method.value, method.name) for method in PaymentMethod],
+        required=False,
+        default=PaymentMethod.LATER,
+        write_only=True
+    )
     end_time = serializers.DateTimeField(required=False)  # Make end_time optional
     
     class Meta:
@@ -155,7 +232,7 @@ class AppointmentSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'doctor', 'doctor_name', 'patient', 'patient_name', 'patient_email', 
             'patient_phone', 'appointment_time', 'end_time', 'reason', 'status', 
-            'notes', 'created_at', 'updated_at', 'can_modify'
+            'notes', 'created_at', 'updated_at', 'can_modify', 'payment_method'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at', 'can_modify']
     
@@ -193,7 +270,37 @@ class AppointmentSerializer(serializers.ModelSerializer):
             representation['patient_name'] = f"{instance.patient.first_name} {instance.patient.last_name}".strip()
             representation['patient_email'] = instance.patient.email
             representation['patient_phone'] = getattr(instance.patient, 'phone', '')
-            
+        
+        # Include medical record information if it exists
+        try:
+            if hasattr(instance, 'medical_record') and instance.medical_record:
+                representation['medical_record'] = {
+                    'id': str(instance.medical_record.id),
+                    'status': instance.medical_record.status,
+                    'is_locked': instance.medical_record.is_locked
+                }
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error getting medical record for appointment {instance.id}: {str(e)}")
+        
+        # Include basic bill information without creating a circular reference
+        try:
+            bill = Bill.objects.filter(appointment=instance).first()
+            if bill:
+                representation['bill'] = {
+                    'id': bill.id,
+                    'amount': str(bill.amount),
+                    'status': bill.status,
+                    'payment_method': bill.payment_method,
+                    'stripe_payment_id': bill.stripe_payment_id,
+                    'transaction_date': bill.transaction_date.isoformat() if bill.transaction_date else None
+                }
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error getting bill for appointment {instance.id}: {str(e)}")
+        
         return representation
     
     def validate(self, data):
@@ -236,6 +343,11 @@ class AppointmentSerializer(serializers.ModelSerializer):
         if not doctor or doctor.role != 'DOCTOR':
             raise serializers.ValidationError("Invalid doctor selected")
         
+        # Validate payment method if provided
+        payment_method = data.get('payment_method')
+        if payment_method and payment_method not in [method.value for method in PaymentMethod]:
+            raise serializers.ValidationError(f"Invalid payment method. Valid options are: {', '.join([method.value for method in PaymentMethod])}")
+            
         if appointment_time and end_time:
             overlapping_query = Q(
                 doctor=doctor,

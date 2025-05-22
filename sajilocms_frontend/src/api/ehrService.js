@@ -44,12 +44,34 @@ export const getOrCreateMedicalRecord = (appointmentId) => {
   return rootAxiosInstance.get(`${EHR_URL}appointment/${appointmentId}/`);
 };
 
+// Create medical record and optionally mark appointment as complete
+export const createMedicalRecordWithAppointment = (recordData, markComplete = false) => {
+  console.log(`Creating medical record with appointment completion option: ${markComplete}`);
+  const data = {
+    ...recordData,
+    mark_complete: markComplete
+  };
+  return rootAxiosInstance.post(`${EHR_URL}create-with-appointment/`, data);
+};
+
 // Export medical record as PDF
 export const exportMedicalRecordPdf = (id) => {
   console.log(`Exporting medical record ${id} as PDF`);
   return rootAxiosInstance.get(`${EHR_URL}records/${id}/export_pdf/`, {
     responseType: 'blob',
   });
+};
+
+// Mark a medical record as completed
+export const markMedicalRecordAsCompleted = (id) => {
+  console.log(`Marking medical record ${id} as completed`);
+  return rootAxiosInstance.post(`${EHR_URL}records/${id}/mark_completed/`);
+};
+
+// Mark a medical record as processing (in progress)
+export const markMedicalRecordAsProcessing = (id) => {
+  console.log(`Marking medical record ${id} as processing`);
+  return rootAxiosInstance.post(`${EHR_URL}records/${id}/mark_processing/`);
 };
 
 // Attachments

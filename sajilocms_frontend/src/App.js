@@ -1,24 +1,28 @@
 import React from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import Navbar from "./components/Navbar";
-import { AuthProvider, AuthContext } from "./context/AuthContext";
+import { AuthProvider } from "./context/AuthContext";
 import LoginPage from "./pages/auth/LoginPage";
 import RegisterPage from "./pages/auth/RegisterPage";
 import UnauthorizedPage from "./pages/auth/UnauthorizedPage";
 import AdminDashboard from "./pages/dashboards/AdminDashboard";
 import DoctorDashboard from "./pages/dashboards/DoctorDashboard";
 import ReceptionistDashboard from "./pages/dashboards/ReceptionistDashboard";
-import PharmacistDashboard from "./pages/dashboards/PharmacistDashboard";
 import PatientDashboard from "./pages/dashboards/PatientDashboard";
+import PharmacistDashboard from "./pages/dashboards/PharmacistDashboard";
+import DoctorAvailabilitiesReceptionist from "./pages/dashboards/DoctorAvailabilitiesReceptionist"; // New import
 import DoctorList from "./components/DoctorList";
 import AppointmentBooking from "./components/appointments/AppointmentBooking";
 import ChatRoom from "./components/communication/ChatRoom";
 import ProtectedRoute from "./components/ProtectedRoute";
-import Chatbot from "./components/chatbot/Chatbot"; // Import the Chatbot component
-import OrderMedicinePage from "./pages/patient/OrderMedicinePage"; // Import OrderMedicinePage
-import PatientPharmacyPage from "./pages/patient/PatientPharmacyPage"; // Import the main pharmacy page
-import PaymentSuccessPage from "./pages/patient/PaymentSuccessPage"; // Import payment success page
-import PaymentCancelPage from "./pages/patient/PaymentCancelPage"; // Import payment cancel page
+import ForgotPasswordPage from "./pages/auth/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/auth/ResetPasswordPage";
+import StripePaymentRedirect from "./components/billing/StripePaymentRedirect";
+import BillDetails from "./components/billing/BillDetails";
+import PaymentSuccess from "./pages/payment/PaymentSuccess";
+import PaymentCancel from "./pages/payment/PaymentCancel";
+import ProfilePage from "./pages/settings/ProfilePage";
+import pharmacyRoutes from "./routes/pharmacyRoutes";
 
 const Home = () => (
   <div className="min-h-screen flex items-center justify-center bg-gray-100">
@@ -39,35 +43,26 @@ const Home = () => (
 
 function App() {
   return (
-    <AuthProvider>
-      <Router>
-        <Navbar />
+    <Router>
+      <AuthProvider>
         <Routes>
           {/* Public Routes */}
-          <Route path="/" element={<Home />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route path="/unauthorized" element={<UnauthorizedPage />} />
-          <Route path="/doctors" element={<DoctorList />} />
-
-          {/* Payment Routes */}
-          <Route path="/payment-success" element={
-            <ProtectedRoute roles={["PATIENT"]}>
-              <PaymentSuccessPage />
-            </ProtectedRoute>
-          } />
-          <Route path="/payment-cancel" element={
-            <ProtectedRoute roles={["PATIENT"]}>
-              <PaymentCancelPage />
-            </ProtectedRoute>
-          } />
+          <Route path="/" element={<><Navbar /><Home /></>} />
+          <Route path="/login" element={<><Navbar /><LoginPage /></>} />
+          <Route path="/register" element={<><Navbar /><RegisterPage /></>} />
+          <Route path="/unauthorized" element={<><Navbar /><UnauthorizedPage /></>} />
+          <Route path="/doctors" element={<><Navbar /><DoctorList /></>} />
+          
+          {/* Password Reset Routes */}
+          <Route path="/forgot-password" element={<><Navbar /><ForgotPasswordPage /></>} />
+          <Route path="/reset-password/:uid/:token" element={<ResetPasswordPage />} />
 
           {/* Protected Routes */}
           <Route
             path="/admin/*"
             element={
               <ProtectedRoute roles={["ADMIN"]}>
-                <AdminDashboard />
+                <><Navbar /><AdminDashboard /></>
               </ProtectedRoute>
             }
           />
@@ -75,23 +70,32 @@ function App() {
             path="/doctor/*"
             element={
               <ProtectedRoute roles={["DOCTOR"]}>
-                <DoctorDashboard />
+                <><Navbar /><DoctorDashboard /></>
               </ProtectedRoute>
             }
           />
+          {/* Receptionist Routes */}
           <Route
-            path="/receptionist/*"
+            path="/receptionist"
             element={
               <ProtectedRoute roles={["RECEPTIONIST"]}>
-                <ReceptionistDashboard />
+                <><Navbar /><ReceptionistDashboard /></>
               </ProtectedRoute>
             }
           />
           <Route
-            path="/pharmacist/*"
+            path="/receptionist/billing"
             element={
-              <ProtectedRoute roles={["PHARMACIST"]}>
-                <PharmacistDashboard />
+              <ProtectedRoute roles={["RECEPTIONIST"]}>
+                <><Navbar /><ReceptionistDashboard /></>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/receptionist/availabilities"
+            element={
+              <ProtectedRoute roles={["RECEPTIONIST"]}>
+                <><Navbar /><DoctorAvailabilitiesReceptionist /></>
               </ProtectedRoute>
             }
           />
@@ -99,15 +103,15 @@ function App() {
             path="/patient/*"
             element={
               <ProtectedRoute roles={["PATIENT"]}>
-                <PatientDashboard />
+                <><Navbar /><PatientDashboard /></>
               </ProtectedRoute>
             }
           />
           <Route
-            path="/patient/order-medicine"
+            path="/pharmacist/*"
             element={
-              <ProtectedRoute roles={["PATIENT"]}>
-                <PatientPharmacyPage />
+              <ProtectedRoute roles={["PHARMACIST", "ADMIN"]}>
+                <><Navbar /><PharmacistDashboard /></>
               </ProtectedRoute>
             }
           />
@@ -115,7 +119,7 @@ function App() {
             path="/book-appointment/:doctorId?"
             element={
               <ProtectedRoute roles={["PATIENT", "RECEPTIONIST", "ADMIN"]}>
-                <AppointmentBooking />
+                <><Navbar /><AppointmentBooking /></>
               </ProtectedRoute>
             }
           />
@@ -123,16 +127,62 @@ function App() {
             path="/chat/:targetUserId"
             element={
               <ProtectedRoute roles={["PATIENT", "DOCTOR"]}>
-                <ChatRoom />
+                <><Navbar /><ChatRoom /></>
               </ProtectedRoute>
             }
           />
 
+          {/* Payment Routes */}
+          <Route
+            path="/payment/:billId"
+            element={
+              <ProtectedRoute roles={["PATIENT", "RECEPTIONIST", "ADMIN"]}>
+                <><Navbar /><StripePaymentRedirect /></>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/bill/:billId"
+            element={
+              <ProtectedRoute roles={["PATIENT", "RECEPTIONIST", "ADMIN"]}>
+                <><Navbar /><BillDetails /></>
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/payment-success" element={<><Navbar /><PaymentSuccess /></>} />
+          <Route path="/payment-cancel" element={<><Navbar /><PaymentCancel /></>} />
+          
+          {/* Profile Route - accessible to all authenticated users */}
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute roles={["PATIENT", "DOCTOR", "RECEPTIONIST", "ADMIN", "PHARMACIST"]}>
+                <><Navbar /><ProfilePage /></>
+              </ProtectedRoute>
+            }
+          />
+          
+          {/* Pharmacy Routes */}
+          {pharmacyRoutes.map((route, index) => (
+            <Route
+              key={`pharmacy-${index}`}
+              path={route.path}
+              element={
+                <ProtectedRoute roles={route.requiredRoles}>
+                  <>
+                    <Navbar />
+                    {route.element}
+                  </>
+                </ProtectedRoute>
+              }
+            />
+          ))}
+
           {/* 404 Fallback */}
           <Route path="*" element={<h2 className="text-center p-10 text-2xl">Page Not Found</h2>} />
         </Routes>
-      </Router>
-    </AuthProvider>
+      </AuthProvider>
+    </Router>
   );
 }
 

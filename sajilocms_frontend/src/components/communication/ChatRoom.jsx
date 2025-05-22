@@ -321,25 +321,25 @@ const ChatRoom = () => {
         console.log("Publishing tracks to remote users");
         await agoraClient.publish([audioTrack, videoTrack]);
         console.log("Successfully published local tracks");
-
+        
         // Set up event handlers for remote users
         console.log("Setting up event handlers for remote users");
         agoraClient.on("user-published", async (remoteUser, mediaType) => {
           console.log(`Remote user ${remoteUser.uid} published ${mediaType} stream`);
-          await agoraClient.subscribe(remoteUser, mediaType);
-          console.log(`Subscribed to ${mediaType} from user ${remoteUser.uid}`);
-          
-          if (mediaType === "video") {
-            setRemoteVideoTrack(remoteUser.videoTrack);
-            console.log("Playing remote video track");
-            if (remoteVideoRef.current) {
-              remoteUser.videoTrack.play(remoteVideoRef.current);
+            await agoraClient.subscribe(remoteUser, mediaType);
+            console.log(`Subscribed to ${mediaType} from user ${remoteUser.uid}`);
+            
+            if (mediaType === "video") {
+              setRemoteVideoTrack(remoteUser.videoTrack);
+              console.log("Playing remote video track");
+              if (remoteVideoRef.current) {
+                remoteUser.videoTrack.play(remoteVideoRef.current);
+              }
             }
-          }
-          if (mediaType === "audio") {
-            console.log("Playing remote audio track");
-            remoteUser.audioTrack.play();
-          }
+            if (mediaType === "audio") {
+              console.log("Playing remote audio track");
+              remoteUser.audioTrack.play();
+            }
         });
 
         agoraClient.on("user-unpublished", (remoteUser, mediaType) => {
@@ -348,7 +348,7 @@ const ChatRoom = () => {
             setRemoteVideoTrack(null);
           }
         });
-
+        
         console.log("Call setup complete, setting call status to active");
         setCallStatus("active");
       } catch (joinError) {

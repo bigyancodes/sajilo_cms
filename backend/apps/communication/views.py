@@ -213,7 +213,9 @@ class GetMessagesView(APIView):
         messages = Message.objects.filter(
             (Q(sender=user) & Q(recipient=target_user)) | (Q(sender=target_user) & Q(recipient=user))
         ).order_by('timestamp')
-        serializer = MessageSerializer(messages, many=True)
+        
+        # Add request to the serializer context to properly resolve profile_photo_url
+        serializer = MessageSerializer(messages, many=True, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def _has_completed_appointment(self, user, target_user):
@@ -251,7 +253,7 @@ class SendMessageView(APIView):
             return Response({'error': 'No completed appointment with this user'}, status=status.HTTP_403_FORBIDDEN)
         
         message = Message.objects.create(sender=user, recipient=recipient, content=content)
-        serializer = MessageSerializer(message)
+        serializer = MessageSerializer(message, context={'request': request})
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def _has_completed_appointment(self, user, recipient):

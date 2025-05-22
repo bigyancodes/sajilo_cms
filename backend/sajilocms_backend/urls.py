@@ -16,6 +16,9 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from django.conf import settings
+from django.conf.urls.static import static
+from django.views.generic import RedirectView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -24,5 +27,5 @@ urlpatterns = [
     path('ehr/', include('apps.ehr.urls')),
     path('communication/', include('apps.communication.urls')),
     path('chatbot/', include('apps.chatbot.urls')),
-    path('api/pharmacy/', include('apps.pharmacy.urls', namespace='pharmacy')),
-]
+    path('pharmacy/', include('apps.pharmacys.urls')),
+] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
